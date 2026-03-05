@@ -1,10 +1,36 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import axios from 'axios';
 import * as Location from 'expo-location';
-import { useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator, FlatList, Modal, ScrollView,
+  StyleSheet, Text, TextInput, TouchableOpacity, View
+} from 'react-native';
 
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
+
+// 1. THE GLOBAL HANDLER
+// This sits outside the component and ONLY dictates how the notification looks/sounds.
+// No state variables (like setScheduledNotifs) can go in here!
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+const PRESET_OPTIONS = [
+  { label: 'At leave time',     minutesBefore: 0   },
+  { label: '5 minutes before',  minutesBefore: 5   },
+  { label: '10 minutes before', minutesBefore: 10  },
+  { label: '15 minutes before', minutesBefore: 15  },
+  { label: '30 minutes before', minutesBefore: 30  },
+  { label: '1 hour before',     minutesBefore: 60  },
+  { label: '2 hours before',    minutesBefore: 120 },
+];
 
 export default function HomeScreen() {
   const [origin, setOrigin] = useState('');
@@ -20,20 +46,32 @@ export default function HomeScreen() {
   const [error, setError] = useState('');
   const [originSuggestions, setOriginSuggestions] = useState([]);
   const [destinationSuggestions, setDestinationSuggestions] = useState([]);
+  const [showNotifModal, setShowNotifModal] = useState(false);
+  const [selectedPresets, setSelectedPresets] = useState([]);
+  const [customMinutes, setCustomMinutes] = useState('');
+  const [scheduledNotifs, setScheduledNotifs] = useState([]);
+
+  const debounceTimer = useRef(null);
+
+  // 2. THE STATE UPDATER
+  // This listens for fired notifications while the app is open and removes them from the UI list.
+  // Because it is inside the component, it has full access to setScheduledNotifs.
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+      const firedId = notification.request.identifier;
+      setScheduledNotifs(prev => prev.filter(n => n.id !== firedId));
+    });
+    return () => subscription.remove();
+  }, []);
 
   function formatDate(date) {
-    return date.toLocaleDateString([], {
-      weekday: 'long', month: 'long', day: 'numeric',
-    });
+    return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   }
 
   function formatTime(date) {
-    return date.toLocaleTimeString([], {
-      hour: '2-digit', minute: '2-digit',
-    });
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  // ── Detect current GPS location ──
   async function detectLocation() {
     setLocationLoading(true);
     setError('');
@@ -44,56 +82,45 @@ export default function HomeScreen() {
         setLocationLoading(false);
         return;
       }
-
       const loc = await Location.getCurrentPositionAsync({});
       const { latitude, longitude } = loc.coords;
-
       const geoResponse = await axios.get(
         'https://maps.googleapis.com/maps/api/geocode/json',
         { params: { latlng: `${latitude},${longitude}`, key: GOOGLE_API_KEY } }
       );
-
       const address = geoResponse.data.results[0]?.formatted_address || 'Current Location';
       setOrigin(address);
       setOriginCoords({ latitude, longitude });
       setOriginSuggestions([]);
-    } catch (err) {
+    } catch {
       setError('Could not detect location. Try entering it manually.');
     }
     setLocationLoading(false);
   }
 
-  // ── Autocomplete suggestions ──
-const debounceTimer = useRef(null);
+  function fetchSuggestions(text, setSuggestions) {
+    if (text.length < 3) { setSuggestions([]); return; }
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        const response = await axios.get(
+          'https://maps.googleapis.com/maps/api/place/autocomplete/json',
+          { params: { input: text, key: GOOGLE_API_KEY } }
+        );
+        setSuggestions(response.data.predictions || []);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 500);
+  }
 
-function fetchSuggestions(text, setSuggestions) {
-  if (text.length < 3) { setSuggestions([]); return; }
-  
-  // Cancel the previous timer if user is still typing
-  if (debounceTimer.current) clearTimeout(debounceTimer.current);
-  
-  // Start a new timer — only fires if user stops typing for 500ms
-  debounceTimer.current = setTimeout(async () => {
-    try {
-      const response = await axios.get(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json',
-        { params: { input: text, key: GOOGLE_API_KEY } }
-      );
-      setSuggestions(response.data.predictions || []);
-    } catch {
-      setSuggestions([]);
-    }
-  }, 500);
-}
-
-  // ── Calculate leave time ──
   async function calculateLeaveTime() {
     if (!origin) { setError('Please enter or detect your starting location.'); return; }
     if (!destination) { setError('Please enter a destination.'); return; }
-
     setLoading(true);
     setError('');
     setResult(null);
+    setScheduledNotifs([]);
 
     try {
       const originParam = originCoords
@@ -119,20 +146,19 @@ function fetchSuggestions(text, setSuggestions) {
         return;
       }
 
-      // ── Drive time calculation ──
       const leg = response.data.routes[0].legs[0];
       const driveSeconds = leg.duration_in_traffic?.value || leg.duration.value;
       const baseSeconds = leg.duration.value;
       const driveMinutes = Math.round(driveSeconds / 60);
       const baseMinutes = Math.round(baseSeconds / 60);
       const trafficMinutes = driveMinutes - baseMinutes;
-
       const prep = parseInt(prepTime) || 0;
       const totalMinutes = driveMinutes + prep + 5;
       const leaveDate = new Date(eventDate.getTime() - totalMinutes * 60000);
 
       setResult({
         leaveTime: formatTime(leaveDate),
+        leaveDate,
         eventTime: formatTime(eventDate),
         eventDate: formatDate(eventDate),
         drive: baseMinutes,
@@ -142,17 +168,113 @@ function fetchSuggestions(text, setSuggestions) {
         origin: leg.start_address,
       });
 
-    } catch (err) {
+    } catch {
       setError('Something went wrong. Check your internet connection.');
     }
-
     setLoading(false);
   }
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+  function togglePreset(minutesBefore) {
+    setSelectedPresets(prev =>
+      prev.includes(minutesBefore)
+        ? prev.filter(m => m !== minutesBefore)
+        : [...prev, minutesBefore]
+    );
+  }
 
-      {/* Header */}
+  async function scheduleAllNotifications() {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Default',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: true,
+      enableVibrate: true,
+      bypassDnd: true,
+    });
+
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') {
+      setError('Please allow notifications in your phone settings.');
+      setShowNotifModal(false);
+      return;
+    }
+
+    const toSchedule = [...selectedPresets];
+    const custom = parseInt(customMinutes);
+    if (!isNaN(custom) && custom >= 0 && !toSchedule.includes(custom)) {
+      toSchedule.push(custom);
+    }
+
+    if (toSchedule.length === 0) {
+      setError('Please select at least one notification time.');
+      return;
+    }
+
+    const newNotifs = [];
+
+    for (const minutesBefore of toSchedule) {
+      const label = minutesBefore === 0
+        ? 'At leave time'
+        : minutesBefore < 60
+          ? `${minutesBefore} minutes before`
+          : minutesBefore === 60
+            ? '1 hour before'
+            : `${minutesBefore / 60} hours before`;
+
+      const triggerTime = new Date(result.leaveDate.getTime() - minutesBefore * 60000);
+
+      if (triggerTime <= new Date()) {
+        console.log(`Skipping "${label}" — trigger time is in the past`);
+        continue;
+      }
+
+      const secondsUntilTrigger = Math.floor((triggerTime.getTime() - Date.now()) / 1000);
+
+      const id = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🚗 Time to leave!',
+          body: `Head to ${result.destination.split(',')[0]} — leave by ${result.leaveTime}`,
+          sound: true,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: secondsUntilTrigger,
+          channelId: 'default',
+        },
+      });
+
+      newNotifs.push({ id, label, minutesBefore, triggerTime });
+    }
+
+    if (newNotifs.length === 0) {
+      setError('All selected times are in the past. Please pick a future event time.');
+      setShowNotifModal(false);
+      return;
+    }
+
+    setScheduledNotifs(newNotifs);
+    setShowNotifModal(false);
+    setSelectedPresets([]);
+    setCustomMinutes('');
+  }
+
+  async function cancelNotification(id) {
+    await Notifications.cancelScheduledNotificationAsync(id);
+    setScheduledNotifs(prev => prev.filter(n => n.id !== id));
+  }
+
+  function formatMinutes(min) {
+    if (min === 0) return `At leave time (${result?.leaveTime})`;
+    if (min < 60) return `${min} min before ${result?.leaveTime}`;
+    if (min === 60) return `1 hour before ${result?.leaveTime}`;
+    return `${min / 60} hours before ${result?.leaveTime}`;
+  }
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.logo}>on<Text style={styles.logoAccent}>time</Text></Text>
       <Text style={styles.tagline}>Never be late again.</Text>
 
@@ -171,18 +293,13 @@ function fetchSuggestions(text, setSuggestions) {
               fetchSuggestions(text, setOriginSuggestions);
             }}
           />
-          <TouchableOpacity
-            style={styles.gpsButton}
-            onPress={detectLocation}
-            disabled={locationLoading}
-          >
+          <TouchableOpacity style={styles.gpsButton} onPress={detectLocation} disabled={locationLoading}>
             {locationLoading
               ? <ActivityIndicator size="small" color="#ff4d1c" />
               : <Text style={styles.gpsIcon}>📍</Text>
             }
           </TouchableOpacity>
         </View>
-
         {originSuggestions.length > 0 && (
           <FlatList
             data={originSuggestions}
@@ -190,14 +307,11 @@ function fetchSuggestions(text, setSuggestions) {
             scrollEnabled={false}
             style={styles.suggestionList}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.suggestionItem}
-                onPress={() => {
-                  setOrigin(item.description);
-                  setOriginCoords(null);
-                  setOriginSuggestions([]);
-                }}
-              >
+              <TouchableOpacity style={styles.suggestionItem} onPress={() => {
+                setOrigin(item.description);
+                setOriginCoords(null);
+                setOriginSuggestions([]);
+              }}>
                 <Text style={styles.suggestionText}>{item.description}</Text>
               </TouchableOpacity>
             )}
@@ -218,7 +332,6 @@ function fetchSuggestions(text, setSuggestions) {
             fetchSuggestions(text, setDestinationSuggestions);
           }}
         />
-
         {destinationSuggestions.length > 0 && (
           <FlatList
             data={destinationSuggestions}
@@ -226,13 +339,10 @@ function fetchSuggestions(text, setSuggestions) {
             scrollEnabled={false}
             style={styles.suggestionList}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.suggestionItem}
-                onPress={() => {
-                  setDestination(item.description);
-                  setDestinationSuggestions([]);
-                }}
-              >
+              <TouchableOpacity style={styles.suggestionItem} onPress={() => {
+                setDestination(item.description);
+                setDestinationSuggestions([]);
+              }}>
                 <Text style={styles.suggestionText}>{item.description}</Text>
               </TouchableOpacity>
             )}
@@ -240,13 +350,13 @@ function fetchSuggestions(text, setSuggestions) {
         )}
       </View>
 
-      {/* Date Picker */}
+      {/* Date */}
       <TouchableOpacity style={styles.card} onPress={() => setShowDatePicker(true)}>
         <Text style={styles.label}>📅 Event date</Text>
         <Text style={styles.pickerValue}>{formatDate(eventDate)}</Text>
       </TouchableOpacity>
 
-      {/* Time Picker */}
+      {/* Time */}
       <TouchableOpacity style={styles.card} onPress={() => setShowTimePicker(true)}>
         <Text style={styles.label}>⏰ Event starts at</Text>
         <Text style={styles.pickerValue}>{formatTime(eventDate)}</Text>
@@ -310,7 +420,98 @@ function fetchSuggestions(text, setSuggestions) {
               <Text style={styles.breakdownLbl}>Buffer</Text>
             </View>
           </View>
+
+          <TouchableOpacity
+            style={styles.notifButton}
+            onPress={() => setShowNotifModal(true)}
+          >
+            <Text style={styles.notifButtonText}>🔔 Set Notifications</Text>
+          </TouchableOpacity>
+
+          {scheduledNotifs.length > 0 && (
+            <View style={styles.chipsContainer}>
+              <Text style={styles.chipsLabel}>ACTIVE NOTIFICATIONS</Text>
+              {scheduledNotifs.map((notif) => (
+                <View key={notif.id} style={styles.chip}>
+                  <Text style={styles.chipText}>
+                    🔔 {formatMinutes(notif.minutesBefore)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => cancelNotification(notif.id)}
+                    style={styles.chipCancel}
+                  >
+                    <Text style={styles.chipCancelText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
+      )}
+
+      {/* Notification Modal */}
+      {showNotifModal && (
+        <Modal transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>🔔 Set Notifications</Text>
+              <Text style={styles.modalSub}>
+                Notify me before I need to leave at {result?.leaveTime}
+              </Text>
+
+              {PRESET_OPTIONS.map((option) => {
+                const isSelected = selectedPresets.includes(option.minutesBefore);
+                return (
+                  <TouchableOpacity
+                    key={option.minutesBefore}
+                    style={[styles.presetRow, isSelected && styles.presetRowSelected]}
+                    onPress={() => togglePreset(option.minutesBefore)}
+                  >
+                    <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                      {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={[styles.presetLabel, isSelected && styles.presetLabelSelected]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <View style={styles.customRow}>
+                <Text style={styles.customLabel}>Custom:</Text>
+                <TextInput
+                  style={styles.customInput}
+                  placeholder="e.g. 45"
+                  placeholderTextColor="#aaa"
+                  keyboardType="numeric"
+                  value={customMinutes}
+                  onChangeText={setCustomMinutes}
+                />
+                <Text style={styles.customUnit}>min before</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.modalDone}
+                onPress={scheduleAllNotifications}
+              >
+                <Text style={styles.modalDoneText}>
+                  Confirm {selectedPresets.length + (customMinutes ? 1 : 0)} Notification{(selectedPresets.length + (customMinutes ? 1 : 0)) !== 1 ? 's' : ''}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => {
+                  setShowNotifModal(false);
+                  setSelectedPresets([]);
+                  setCustomMinutes('');
+                }}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* Date Modal */}
@@ -378,9 +579,9 @@ const styles = StyleSheet.create({
   logoAccent: { color: '#ff4d1c' },
   tagline: { fontSize: 15, color: '#888', marginBottom: 32 },
   card: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
-    marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.06,
-    shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16,
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
   label: {
     fontSize: 12, fontWeight: '700', color: '#888',
@@ -430,21 +631,72 @@ const styles = StyleSheet.create({
     fontSize: 10, color: 'rgba(255,255,255,0.5)',
     marginTop: 2, fontWeight: '600', letterSpacing: 0.5,
   },
+  notifButton: {
+    marginTop: 20, backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 14, paddingVertical: 14, paddingHorizontal: 24,
+    width: '100%', alignItems: 'center',
+  },
+  notifButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  chipsContainer: { width: '100%', marginTop: 16 },
+  chipsLabel: {
+    fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.4)',
+    letterSpacing: 1.5, marginBottom: 8,
+  },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,77,28,0.15)',
+    borderWidth: 1, borderColor: 'rgba(255,77,28,0.3)',
+    borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 6,
+  },
+  chipText: { color: '#ff4d1c', fontWeight: '600', fontSize: 13 },
+  chipCancel: { paddingLeft: 12 },
+  chipCancelText: { color: 'rgba(255,255,255,0.4)', fontSize: 13 },
   modalOverlay: {
-    flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)',
+    flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)',
   },
   modalCard: {
-    backgroundColor: '#fff', borderTopLeftRadius: 24,
-    borderTopRightRadius: 24, padding: 24, paddingBottom: 40,
+    backgroundColor: '#fff', borderTopLeftRadius: 28,
+    borderTopRightRadius: 28, padding: 24, paddingBottom: 44,
   },
   modalTitle: {
-    fontSize: 18, fontWeight: '700', color: '#1a1a1a',
-    marginBottom: 12, textAlign: 'center',
+    fontSize: 20, fontWeight: '800', color: '#1a1a1a',
+    marginBottom: 4, textAlign: 'center',
   },
-  picker: { width: '100%' },
+  modalSub: { fontSize: 13, color: '#888', textAlign: 'center', marginBottom: 20 },
+  presetRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 13, paddingHorizontal: 12,
+    borderRadius: 12, marginBottom: 6, backgroundColor: '#f9f6f0',
+  },
+  presetRowSelected: { backgroundColor: '#fff3ee' },
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6,
+    borderWidth: 2, borderColor: '#ddd',
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  checkboxSelected: { backgroundColor: '#ff4d1c', borderColor: '#ff4d1c' },
+  checkmark: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  presetLabel: { fontSize: 15, color: '#888', fontWeight: '500' },
+  presetLabelSelected: { color: '#1a1a1a', fontWeight: '700' },
+  customRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#f9f6f0', borderRadius: 12,
+    padding: 12, marginTop: 8, marginBottom: 20, gap: 8,
+  },
+  customLabel: { fontSize: 15, color: '#888', fontWeight: '500' },
+  customInput: {
+    flex: 1, fontSize: 16, fontWeight: '700', color: '#1a1a1a',
+    textAlign: 'center', borderBottomWidth: 2,
+    borderBottomColor: '#ff4d1c', paddingBottom: 2,
+  },
+  customUnit: { fontSize: 14, color: '#888' },
   modalDone: {
     backgroundColor: '#ff4d1c', borderRadius: 14,
-    padding: 16, alignItems: 'center', marginTop: 16,
+    padding: 16, alignItems: 'center', marginBottom: 10,
   },
   modalDoneText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  modalCancel: { alignItems: 'center', padding: 10 },
+  modalCancelText: { color: '#888', fontSize: 15 },
+  picker: { width: '100%' },
 });
