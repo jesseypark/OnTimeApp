@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import axios from 'axios';
 import * as Location from 'expo-location';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
@@ -64,8 +64,16 @@ export default function HomeScreen() {
   }
 
   // ── Autocomplete suggestions ──
-  async function fetchSuggestions(text, setSuggestions) {
-    if (text.length < 3) { setSuggestions([]); return; }
+const debounceTimer = useRef(null);
+
+function fetchSuggestions(text, setSuggestions) {
+  if (text.length < 3) { setSuggestions([]); return; }
+  
+  // Cancel the previous timer if user is still typing
+  if (debounceTimer.current) clearTimeout(debounceTimer.current);
+  
+  // Start a new timer — only fires if user stops typing for 500ms
+  debounceTimer.current = setTimeout(async () => {
     try {
       const response = await axios.get(
         'https://maps.googleapis.com/maps/api/place/autocomplete/json',
@@ -75,7 +83,8 @@ export default function HomeScreen() {
     } catch {
       setSuggestions([]);
     }
-  }
+  }, 500);
+}
 
   // ── Calculate leave time ──
   async function calculateLeaveTime() {
