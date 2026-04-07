@@ -103,12 +103,15 @@ export default function HomeScreen() {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(async () => {
       try {
-        const response = await axios.get(
-          'https://maps.googleapis.com/maps/api/place/autocomplete/json',
-          { params: { input: text, key: GOOGLE_API_KEY } }
+        const response = await axios.post(
+          'https://places.googleapis.com/v1/places:autocomplete',
+          { input: text },
+          { headers: { 'X-Goog-Api-Key': GOOGLE_API_KEY, 'Content-Type': 'application/json' } }
         );
-        setSuggestions(response.data.predictions || []);
-      } catch {
+        console.log('[fetchSuggestions] response:', response.data);
+        setSuggestions(response.data.suggestions || []);
+      } catch (err) {
+        console.log('[fetchSuggestions] error:', err);
         setSuggestions([]);
       }
     }, 500);
@@ -303,16 +306,16 @@ export default function HomeScreen() {
         {originSuggestions.length > 0 && (
           <FlatList
             data={originSuggestions}
-            keyExtractor={(item) => item.place_id}
+            keyExtractor={(item) => item.placePrediction.placeId}
             scrollEnabled={false}
             style={styles.suggestionList}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.suggestionItem} onPress={() => {
-                setOrigin(item.description);
+                setOrigin(item.placePrediction.text.text);
                 setOriginCoords(null);
                 setOriginSuggestions([]);
               }}>
-                <Text style={styles.suggestionText}>{item.description}</Text>
+                <Text style={styles.suggestionText}>{item.placePrediction.text.text}</Text>
               </TouchableOpacity>
             )}
           />
@@ -335,15 +338,15 @@ export default function HomeScreen() {
         {destinationSuggestions.length > 0 && (
           <FlatList
             data={destinationSuggestions}
-            keyExtractor={(item) => item.place_id}
+            keyExtractor={(item) => item.placePrediction.placeId}
             scrollEnabled={false}
             style={styles.suggestionList}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.suggestionItem} onPress={() => {
-                setDestination(item.description);
+                setDestination(item.placePrediction.text.text);
                 setDestinationSuggestions([]);
               }}>
-                <Text style={styles.suggestionText}>{item.description}</Text>
+                <Text style={styles.suggestionText}>{item.placePrediction.text.text}</Text>
               </TouchableOpacity>
             )}
           />
