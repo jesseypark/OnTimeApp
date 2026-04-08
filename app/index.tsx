@@ -4,8 +4,8 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Modal, ScrollView,
-  StyleSheet, Text, TextInput, TouchableOpacity, View
+  ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform,
+  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native';
 
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
@@ -49,9 +49,11 @@ export default function HomeScreen() {
   const [showNotifModal, setShowNotifModal] = useState(false);
   const [selectedPresets, setSelectedPresets] = useState([]);
   const [customMinutes, setCustomMinutes] = useState('');
+  const [customAlarmPreview, setCustomAlarmPreview] = useState('');
   const [scheduledNotifs, setScheduledNotifs] = useState([]);
 
   const debounceTimer = useRef(null);
+  const scrollViewRef = useRef(null);
 
   // 2. THE STATE UPDATER
   // This listens for fired notifications while the app is open and removes them from the UI list.
@@ -63,6 +65,20 @@ export default function HomeScreen() {
     });
     return () => subscription.remove();
   }, []);
+
+  useEffect(() => {
+    if (!customMinutes || !result) {
+      setCustomAlarmPreview('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      const mins = parseInt(customMinutes);
+      if (isNaN(mins) || mins < 0) { setCustomAlarmPreview(''); return; }
+      const alarmTime = new Date(result.leaveDate.getTime() - mins * 60000);
+      setCustomAlarmPreview(`Alarm will go off at ${formatTime(alarmTime)}`);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [customMinutes, result]);
 
   function formatDate(date) {
     return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
@@ -170,6 +186,7 @@ export default function HomeScreen() {
         destination: leg.end_address,
         origin: leg.start_address,
       });
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 150);
 
     } catch {
       setError('Something went wrong. Check your internet connection.');
@@ -186,11 +203,13 @@ export default function HomeScreen() {
   }
 
   async function scheduleAllNotifications() {
+    await Notifications.deleteNotificationChannelAsync('default');
     await Notifications.setNotificationChannelAsync('default', {
       name: 'Default',
       importance: Notifications.AndroidImportance.MAX,
       sound: true,
       enableVibrate: true,
+      vibrationPattern: [0, 250, 150, 250],
       bypassDnd: true,
     });
 
@@ -258,6 +277,7 @@ export default function HomeScreen() {
     setShowNotifModal(false);
     setSelectedPresets([]);
     setCustomMinutes('');
+    setCustomAlarmPreview('');
   }
 
   async function cancelNotification(id) {
@@ -265,15 +285,23 @@ export default function HomeScreen() {
     setScheduledNotifs(prev => prev.filter(n => n.id !== id));
   }
 
-  function formatMinutes(min) {
-    if (min === 0) return `At leave time (${result?.leaveTime})`;
-    if (min < 60) return `${min} min before ${result?.leaveTime}`;
-    if (min === 60) return `1 hour before ${result?.leaveTime}`;
-    return `${min / 60} hours before ${result?.leaveTime}`;
+  function formatChipText(notif) {
+    const alarmTime = formatTime(new Date(notif.triggerTime));
+    const min = notif.minutesBefore;
+    if (min === 0) return `At leave time — alarm at ${alarmTime}`;
+    if (min < 60) return `${min} min before ${result?.leaveTime} — alarm at ${alarmTime}`;
+    if (min === 60) return `1 hour before ${result?.leaveTime} — alarm at ${alarmTime}`;
+    const hours = parseFloat((min / 60).toFixed(2));
+    return `${hours} hours before ${result?.leaveTime} — alarm at ${alarmTime}`;
   }
 
   return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
     <ScrollView
+      ref={scrollViewRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
@@ -354,20 +382,50 @@ export default function HomeScreen() {
       </View>
 
       {/* Date */}
-      <TouchableOpacity style={styles.card} onPress={() => setShowDatePicker(true)}>
+      <TouchableOpacity style={styles.card} onPress={() => setShowDatePicker(v => !v)}>
         <Text style={styles.label}>📅 Event date</Text>
         <Text style={styles.pickerValue}>{formatDate(eventDate)}</Text>
       </TouchableOpacity>
+      {showDatePicker && (
+        <DateTimePicker
+          value={eventDate}
+          mode="date"
+          display="spinner"
+          onChange={(event, selected) => {
+            if (selected) {
+              const updated = new Date(eventDate);
+              updated.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+              setEventDate(updated);
+            }
+            setShowDatePicker(false);
+          }}
+        />
+      )}
 
       {/* Time */}
-      <TouchableOpacity style={styles.card} onPress={() => setShowTimePicker(true)}>
+      <TouchableOpacity style={styles.card} onPress={() => setShowTimePicker(v => !v)}>
         <Text style={styles.label}>⏰ Event starts at</Text>
         <Text style={styles.pickerValue}>{formatTime(eventDate)}</Text>
       </TouchableOpacity>
+      {showTimePicker && (
+        <DateTimePicker
+          value={eventDate}
+          mode="time"
+          display="spinner"
+          onChange={(event, selected) => {
+            if (selected) {
+              const updated = new Date(eventDate);
+              updated.setHours(selected.getHours(), selected.getMinutes());
+              setEventDate(updated);
+            }
+            setShowTimePicker(false);
+          }}
+        />
+      )}
 
       {/* Prep Time */}
       <View style={styles.card}>
-        <Text style={styles.label}>🧴 Getting-ready buffer (minutes)</Text>
+        <Text style={styles.label}>🧴 Prep Time (Minutes)</Text>
         <TextInput
           style={styles.input}
           placeholder="15"
@@ -437,7 +495,7 @@ export default function HomeScreen() {
               {scheduledNotifs.map((notif) => (
                 <View key={notif.id} style={styles.chip}>
                   <Text style={styles.chipText}>
-                    🔔 {formatMinutes(notif.minutesBefore)}
+                    🔔 {formatChipText(notif)}
                   </Text>
                   <TouchableOpacity
                     onPress={() => cancelNotification(notif.id)}
@@ -455,6 +513,10 @@ export default function HomeScreen() {
       {/* Notification Modal */}
       {showNotifModal && (
         <Modal transparent animationType="slide">
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>🔔 Set Notifications</Text>
@@ -492,6 +554,9 @@ export default function HomeScreen() {
                 />
                 <Text style={styles.customUnit}>min before</Text>
               </View>
+              {customAlarmPreview ? (
+                <Text style={styles.customPreview}>{customAlarmPreview}</Text>
+              ) : null}
 
               <TouchableOpacity
                 style={styles.modalDone}
@@ -508,70 +573,20 @@ export default function HomeScreen() {
                   setShowNotifModal(false);
                   setSelectedPresets([]);
                   setCustomMinutes('');
+                  setCustomAlarmPreview('');
                 }}
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
-      {/* Date Modal */}
-      {showDatePicker && (
-        <Modal transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Pick a Date</Text>
-              <DateTimePicker
-                value={eventDate}
-                mode="date"
-                display="spinner"
-                onChange={(event, selected) => {
-                  if (selected) {
-                    const updated = new Date(eventDate);
-                    updated.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
-                    setEventDate(updated);
-                  }
-                }}
-                style={styles.picker}
-              />
-              <TouchableOpacity style={styles.modalDone} onPress={() => setShowDatePicker(false)}>
-                <Text style={styles.modalDoneText}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
-
-      {/* Time Modal */}
-      {showTimePicker && (
-        <Modal transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Pick a Time</Text>
-              <DateTimePicker
-                value={eventDate}
-                mode="time"
-                display="spinner"
-                onChange={(event, selected) => {
-                  if (selected) {
-                    const updated = new Date(eventDate);
-                    updated.setHours(selected.getHours(), selected.getMinutes());
-                    setEventDate(updated);
-                  }
-                }}
-                style={styles.picker}
-              />
-              <TouchableOpacity style={styles.modalDone} onPress={() => setShowTimePicker(false)}>
-                <Text style={styles.modalDoneText}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
 
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -694,6 +709,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ff4d1c', paddingBottom: 2,
   },
   customUnit: { fontSize: 14, color: '#888' },
+  customPreview: { fontSize: 13, color: '#ff4d1c', fontWeight: '600', textAlign: 'center', marginBottom: 12, marginTop: -8 },
   modalDone: {
     backgroundColor: '#ff4d1c', borderRadius: 14,
     padding: 16, alignItems: 'center', marginBottom: 10,
@@ -701,5 +717,4 @@ const styles = StyleSheet.create({
   modalDoneText: { color: '#fff', fontWeight: '700', fontSize: 16 },
   modalCancel: { alignItems: 'center', padding: 10 },
   modalCancelText: { color: '#888', fontSize: 15 },
-  picker: { width: '100%' },
 });
