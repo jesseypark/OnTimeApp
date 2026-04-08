@@ -76,7 +76,7 @@ export default function HomeScreen() {
       if (isNaN(mins) || mins < 0) { setCustomAlarmPreview(''); return; }
       const alarmTime = new Date(result.leaveDate.getTime() - mins * 60000);
       setCustomAlarmPreview(`Alarm will go off at ${formatTime(alarmTime)}`);
-    }, 2000);
+    }, 1000);
     return () => clearTimeout(timer);
   }, [customMinutes, result]);
 
@@ -273,7 +273,7 @@ export default function HomeScreen() {
       return;
     }
 
-    setScheduledNotifs(newNotifs);
+    setScheduledNotifs(prev => [...prev, ...newNotifs]);
     setShowNotifModal(false);
     setSelectedPresets([]);
     setCustomMinutes('');
@@ -324,6 +324,15 @@ export default function HomeScreen() {
               fetchSuggestions(text, setOriginSuggestions);
             }}
           />
+          {origin.length > 0 && (
+            <TouchableOpacity style={styles.clearButton} onPress={() => {
+              setOrigin('');
+              setOriginCoords(null);
+              setOriginSuggestions([]);
+            }}>
+              <Text style={styles.clearButtonText}>✕</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.gpsButton} onPress={detectLocation} disabled={locationLoading}>
             {locationLoading
               ? <ActivityIndicator size="small" color="#ff4d1c" />
@@ -353,16 +362,26 @@ export default function HomeScreen() {
       {/* Destination */}
       <View style={styles.card}>
         <Text style={styles.label}>📍 Where are you going?</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter address or place name"
-          placeholderTextColor="#aaa"
-          value={destination}
-          onChangeText={(text) => {
-            setDestination(text);
-            fetchSuggestions(text, setDestinationSuggestions);
-          }}
-        />
+        <View style={styles.locationRow}>
+          <TextInput
+            style={[styles.input, { flex: 1 }]}
+            placeholder="Enter address or place name"
+            placeholderTextColor="#aaa"
+            value={destination}
+            onChangeText={(text) => {
+              setDestination(text);
+              fetchSuggestions(text, setDestinationSuggestions);
+            }}
+          />
+          {destination.length > 0 && (
+            <TouchableOpacity style={styles.clearButton} onPress={() => {
+              setDestination('');
+              setDestinationSuggestions([]);
+            }}>
+              <Text style={styles.clearButtonText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         {destinationSuggestions.length > 0 && (
           <FlatList
             data={destinationSuggestions}
@@ -390,7 +409,7 @@ export default function HomeScreen() {
         <DateTimePicker
           value={eventDate}
           mode="date"
-          display="spinner"
+          display="calendar"
           onChange={(event, selected) => {
             if (selected) {
               const updated = new Date(eventDate);
@@ -613,6 +632,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f0e8', alignItems: 'center', justifyContent: 'center',
   },
   gpsIcon: { fontSize: 18 },
+  clearButton: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: '#c7c7cc', alignItems: 'center', justifyContent: 'center',
+    marginRight: 6,
+  },
+  clearButtonText: { color: '#fff', fontSize: 11, fontWeight: '700', lineHeight: 14 },
   suggestionList: { marginTop: 8, borderTopWidth: 1, borderTopColor: '#f0ece4' },
   suggestionItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0ece4' },
   suggestionText: { fontSize: 14, color: '#1a1a1a' },
