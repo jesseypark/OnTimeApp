@@ -21,7 +21,7 @@
       "package": "com.jesseypark.ontimeapp"
     },
     "web": {
-      "output": "static",
+      "output": "single-page",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [

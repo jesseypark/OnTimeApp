@@ -1,4 +1,4 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker from '@/components/DateTimePickerWrapper';
 import axios from 'axios';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
@@ -203,15 +203,17 @@ export default function HomeScreen() {
   }
 
   async function scheduleAllNotifications() {
-    await Notifications.deleteNotificationChannelAsync('default');
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'Default',
-      importance: Notifications.AndroidImportance.MAX,
-      sound: true,
-      enableVibrate: true,
-      vibrationPattern: [0, 250, 150, 250],
-      bypassDnd: true,
-    });
+    if (Platform.OS === 'android') {
+      await Notifications.deleteNotificationChannelAsync('default');
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Default',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: true,
+        enableVibrate: true,
+        vibrationPattern: [0, 250, 150, 250],
+        bypassDnd: true,
+      });
+    }
 
     const { status } = await Notifications.requestPermissionsAsync();
     if (status !== 'granted') {
