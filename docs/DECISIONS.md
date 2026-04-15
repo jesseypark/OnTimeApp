@@ -70,6 +70,24 @@ The Android notification channel is deleted and re-created on every call to `sch
 
 ---
 
+## Web notifications use the browser Notification API + setTimeout
+
+`expo-notifications`' `scheduleNotificationAsync` throws on web ("not available on web"). On web, `scheduleAllNotifications` requests permission via `Notification.requestPermission()` and schedules each reminder with `setTimeout` — the callback fires `new Notification(title, {body})`. Timeout IDs are stored in a ref keyed by a generated `web-*` id so cancel works the same way in the UI. Caveat: timeouts don't survive page reload and won't fire if the tab is closed — acceptable for the current web build.
+
+---
+
+## Web uses Google Maps JS SDK for Directions (not the REST API)
+
+The REST Directions endpoint (`maps.googleapis.com/maps/api/directions/json`) does not send CORS headers, so browser calls fail with "blocked by CORS policy." On web, `fetchDirections` dynamically loads `maps.googleapis.com/maps/api/js` and uses `DirectionsService.route()` instead, which is CORS-safe. Native platforms continue to use the REST endpoint via axios. The Maps JavaScript API must be enabled on the Google Cloud project for the same `EXPO_PUBLIC_GOOGLE_MAPS_KEY`.
+
+---
+
+## Web date/time cards open the picker directly via `showPicker()`
+
+To avoid showing a second box below the "Event date" / "Event starts at" card on web, the `<input type="date|time">` is rendered inside the card but visually hidden (1px, opacity 0, pointer-events none). Tapping the card calls `ref.showPicker()` (with a `.click()` fallback for older browsers), which opens the browser's native date/time picker. The card itself continues to display the formatted value. Native platforms keep the existing toggle-to-show inline picker flow.
+
+---
+
 ## Platform-split DateTimePicker via `.web.tsx` file extension
 
 The native `@react-native-community/datetimepicker` package has no web implementation. Rather than a runtime `Platform.OS` check with a lazy `require()`, the app uses Expo/Metro's built-in platform extension resolution: `DateTimePickerWrapper.tsx` (native, re-exports the native package) and `DateTimePickerWrapper.web.tsx` (renders HTML `<input>`). This keeps the import clean and lets the bundler tree-shake the native module from the web bundle entirely.

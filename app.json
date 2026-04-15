@@ -2,7 +2,7 @@
   "expo": {
     "name": "OnTime",
     "slug": "OnTimeApp2",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ontime",
@@ -18,7 +18,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.jesseypark.ontimeapp"
+      "package": "com.jesseypark.ontimeapp",
+      "versionCode": 2
     },
     "web": {
       "output": "single-page",

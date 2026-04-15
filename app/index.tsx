@@ -10,6 +10,76 @@ import {
 
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_KEY;
 
+let mapsApiPromise: Promise<any> | null = null;
+function loadMapsApi(): Promise<any> {
+  if (mapsApiPromise) return mapsApiPromise;
+  mapsApiPromise = new Promise((resolve, reject) => {
+    const w = window as any;
+    if (w.google?.maps) return resolve(w.google);
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_API_KEY}&libraries=routes`;
+    script.async = true;
+    script.onload = () => resolve(w.google);
+    script.onerror = () => reject(new Error('Failed to load Google Maps JS'));
+    document.head.appendChild(script);
+  });
+  return mapsApiPromise;
+}
+
+async function fetchDirections({ origin, originCoords, destination, departureTime }: any) {
+  if (Platform.OS === 'web') {
+    const google = await loadMapsApi();
+    const svc = new google.maps.DirectionsService();
+    const originVal = originCoords
+      ? { lat: originCoords.latitude, lng: originCoords.longitude }
+      : origin;
+    try {
+      const routePromise = svc.route({
+        origin: originVal,
+        destination,
+        travelMode: google.maps.TravelMode.DRIVING,
+        drivingOptions: {
+          departureTime: new Date(departureTime * 1000),
+          trafficModel: google.maps.TrafficModel.BEST_GUESS,
+        },
+      });
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Directions request timed out')), 10000)
+      );
+      const result: any = await Promise.race([routePromise, timeout]);
+      const leg = result.routes[0].legs[0];
+      return {
+        status: 'OK',
+        leg: {
+          duration: { value: leg.duration.value },
+          duration_in_traffic: leg.duration_in_traffic ? { value: leg.duration_in_traffic.value } : undefined,
+          start_address: leg.start_address,
+          end_address: leg.end_address,
+        },
+      };
+    } catch (e: any) {
+      return { status: e?.code || 'ERROR' };
+    }
+  }
+  const originParam = originCoords
+    ? `${originCoords.latitude},${originCoords.longitude}`
+    : origin;
+  const response = await axios.get(
+    'https://maps.googleapis.com/maps/api/directions/json',
+    {
+      params: {
+        origin: originParam,
+        destination,
+        departure_time: departureTime,
+        traffic_model: 'best_guess',
+        key: GOOGLE_API_KEY,
+      },
+    }
+  );
+  if (response.data.status !== 'OK') return { status: response.data.status };
+  return { status: 'OK', leg: response.data.routes[0].legs[0] };
+}
+
 // 1. THE GLOBAL HANDLER
 // This sits outside the component and ONLY dictates how the notification looks/sounds.
 // No state variables (like setScheduledNotifs) can go in here!
@@ -54,6 +124,32 @@ export default function HomeScreen() {
 
   const debounceTimer = useRef(null);
   const scrollViewRef = useRef(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const timeInputRef = useRef<HTMLInputElement>(null);
+  const webTimeouts = useRef<Record<string, any>>({});
+
+  const webDateValue = (() => {
+    const y = eventDate.getFullYear();
+    const m = String(eventDate.getMonth() + 1).padStart(2, '0');
+    const d = String(eventDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  })();
+  const webTimeValue = (() => {
+    const h = String(eventDate.getHours()).padStart(2, '0');
+    const mn = String(eventDate.getMinutes()).padStart(2, '0');
+    return `${h}:${mn}`;
+  })();
+
+  const openWebDatePicker = () => {
+    const el = dateInputRef.current as any;
+    if (el?.showPicker) el.showPicker();
+    else el?.click();
+  };
+  const openWebTimePicker = () => {
+    const el = timeInputRef.current as any;
+    if (el?.showPicker) el.showPicker();
+    else el?.click();
+  };
 
   // 2. THE STATE UPDATER
   // This listens for fired notifications while the app is open and removes them from the UI list.
@@ -142,30 +238,20 @@ export default function HomeScreen() {
     setScheduledNotifs([]);
 
     try {
-      const originParam = originCoords
-        ? `${originCoords.latitude},${originCoords.longitude}`
-        : origin;
+      const directions = await fetchDirections({
+        origin,
+        originCoords,
+        destination,
+        departureTime: Math.floor(eventDate.getTime() / 1000),
+      });
 
-      const response = await axios.get(
-        'https://maps.googleapis.com/maps/api/directions/json',
-        {
-          params: {
-            origin: originParam,
-            destination,
-            departure_time: Math.floor(eventDate.getTime() / 1000),
-            traffic_model: 'best_guess',
-            key: GOOGLE_API_KEY,
-          },
-        }
-      );
-
-      if (response.data.status !== 'OK') {
+      if (directions.status !== 'OK') {
         setError('Could not find that route. Try being more specific.');
         setLoading(false);
         return;
       }
 
-      const leg = response.data.routes[0].legs[0];
+      const leg = directions.leg;
       const driveSeconds = leg.duration_in_traffic?.value || leg.duration.value;
       const baseSeconds = leg.duration.value;
       const driveMinutes = Math.round(driveSeconds / 60);
@@ -215,11 +301,27 @@ export default function HomeScreen() {
       });
     }
 
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') {
-      setError('Please allow notifications in your phone settings.');
-      setShowNotifModal(false);
-      return;
+    if (Platform.OS === 'web') {
+      if (typeof Notification === 'undefined') {
+        setError('This browser does not support notifications.');
+        setShowNotifModal(false);
+        return;
+      }
+      const perm = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission();
+      if (perm !== 'granted') {
+        setError('Please allow notifications in your browser settings.');
+        setShowNotifModal(false);
+        return;
+      }
+    } else {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Please allow notifications in your phone settings.');
+        setShowNotifModal(false);
+        return;
+      }
     }
 
     const toSchedule = [...selectedPresets];
@@ -251,20 +353,29 @@ export default function HomeScreen() {
         continue;
       }
 
-      const secondsUntilTrigger = Math.floor((triggerTime.getTime() - Date.now()) / 1000);
+      const msUntilTrigger = triggerTime.getTime() - Date.now();
+      const title = '🚗 Time to leave!';
+      const body = `Head to ${result.destination.split(',')[0]} — leave by ${result.leaveTime}`;
 
-      const id = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '🚗 Time to leave!',
-          body: `Head to ${result.destination.split(',')[0]} — leave by ${result.leaveTime}`,
-          sound: true,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-          seconds: secondsUntilTrigger,
-          channelId: 'default',
-        },
-      });
+      let id: string;
+      if (Platform.OS === 'web') {
+        id = `web-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const timeoutId = setTimeout(() => {
+          try { new Notification(title, { body }); } catch {}
+          delete webTimeouts.current[id];
+          setScheduledNotifs(prev => prev.filter(n => n.id !== id));
+        }, msUntilTrigger);
+        webTimeouts.current[id] = timeoutId;
+      } else {
+        id = await Notifications.scheduleNotificationAsync({
+          content: { title, body, sound: true },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: Math.floor(msUntilTrigger / 1000),
+            channelId: 'default',
+          },
+        });
+      }
 
       newNotifs.push({ id, label, minutesBefore, triggerTime });
     }
@@ -283,7 +394,13 @@ export default function HomeScreen() {
   }
 
   async function cancelNotification(id) {
-    await Notifications.cancelScheduledNotificationAsync(id);
+    if (Platform.OS === 'web') {
+      const t = webTimeouts.current[id];
+      if (t) clearTimeout(t);
+      delete webTimeouts.current[id];
+    } else {
+      await Notifications.cancelScheduledNotificationAsync(id);
+    }
     setScheduledNotifs(prev => prev.filter(n => n.id !== id));
   }
 
@@ -403,11 +520,33 @@ export default function HomeScreen() {
       </View>
 
       {/* Date */}
-      <TouchableOpacity style={styles.card} onPress={() => setShowDatePicker(v => !v)}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => Platform.OS === 'web' ? openWebDatePicker() : setShowDatePicker(v => !v)}
+      >
         <Text style={styles.label}>📅 Event date</Text>
         <Text style={styles.pickerValue}>{formatDate(eventDate)}</Text>
+        {Platform.OS === 'web' && (
+          <input
+            ref={dateInputRef}
+            type="date"
+            value={webDateValue}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (!val) return;
+              const [y, m, d] = val.split('-').map(Number);
+              const updated = new Date(eventDate);
+              updated.setFullYear(y, m - 1, d);
+              setEventDate(updated);
+            }}
+            style={{
+              position: 'absolute', width: 1, height: 1, opacity: 0,
+              pointerEvents: 'none', border: 0, padding: 0, bottom: 0, left: 0,
+            }}
+          />
+        )}
       </TouchableOpacity>
-      {showDatePicker && (
+      {Platform.OS !== 'web' && showDatePicker && (
         <DateTimePicker
           value={eventDate}
           mode="date"
@@ -424,11 +563,33 @@ export default function HomeScreen() {
       )}
 
       {/* Time */}
-      <TouchableOpacity style={styles.card} onPress={() => setShowTimePicker(v => !v)}>
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => Platform.OS === 'web' ? openWebTimePicker() : setShowTimePicker(v => !v)}
+      >
         <Text style={styles.label}>⏰ Event starts at</Text>
         <Text style={styles.pickerValue}>{formatTime(eventDate)}</Text>
+        {Platform.OS === 'web' && (
+          <input
+            ref={timeInputRef}
+            type="time"
+            value={webTimeValue}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (!val) return;
+              const [h, mn] = val.split(':').map(Number);
+              const updated = new Date(eventDate);
+              updated.setHours(h, mn);
+              setEventDate(updated);
+            }}
+            style={{
+              position: 'absolute', width: 1, height: 1, opacity: 0,
+              pointerEvents: 'none', border: 0, padding: 0, bottom: 0, left: 0,
+            }}
+          />
+        )}
       </TouchableOpacity>
-      {showTimePicker && (
+      {Platform.OS !== 'web' && showTimePicker && (
         <DateTimePicker
           value={eventDate}
           mode="time"

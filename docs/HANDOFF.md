@@ -1,6 +1,6 @@
 # Handoff
 
-Current state of the project as of 2026-04-14.
+Current state of the project as of 2026-04-14. Last updated 2026-04-14.
 
 ---
 
@@ -8,18 +8,19 @@ Current state of the project as of 2026-04-14.
 
 - **Core calculation** — origin/destination input, GPS auto-detect, event date/time picking, prep time, drive time + traffic from Google Maps Directions API, leave time result with breakdown (Drive / Traffic / Prep / Buffer tiles).
 - **Places Autocomplete** — both origin and destination fields use Google Places API v1 with 500ms debounce and inline suggestion lists.
-- **Notifications** — preset + custom offset selection, scheduling via `expo-notifications`, active notification chips with per-notification cancel. Android channel configured for max importance + bypass DND.
-- **Web support** — app runs in the browser. Date/time pickers use HTML `<input>` elements on web via `DateTimePickerWrapper.web.tsx`. Android-only notification channel code is platform-guarded.
+- **Notifications** — preset + custom offset selection, scheduling via `expo-notifications` on native and via `Notification` API + `setTimeout` on web, active notification chips with per-notification cancel. Android channel configured for max importance + bypass DND.
+- **Web support** — app runs in the browser. Date/time pickers on web use hidden HTML `<input>` elements triggered via `showPicker()` when the card is tapped (no second display box). Directions on web use the Google Maps JS SDK `DirectionsService` (REST Directions API is CORS-blocked from browsers). Android-only notification channel code is platform-guarded.
 - **App icon + splash** — custom clock icon and warm beige (`#f5f0e8`) splash, both light and dark variants configured.
 - **EAS project configured** — `projectId` in `app.json`, Android package `com.jesseypark.ontimeapp`.
 - **App store assets** — `feature-graphic.png` and `icon-512.png` present in `assets/images/`.
+- **Docs** — `/docs` folder created with `PROJECT_MAP.md`, `DECISIONS.md`, and `HANDOFF.md`. `CLAUDE.md` updated to reference them.
+- **Git history clean** — all commits have proper version labels through v10. Pushed to `jesseypark/OnTimeApp` on GitHub.
 
 ---
 
 ## What looks in progress or incomplete
 
 - **`app/modal.tsx`** — contains placeholder text ("This is a modal") and is not linked to any button or navigation action in the UI. Either needs content or should be deleted.
-- **Latest commit message** — `vX - XXXXXXusability improvements...` has placeholder `XXXXXX` text, suggesting the version/release process was interrupted mid-commit.
 
 ---
 
@@ -46,6 +47,9 @@ These are all leftover from the Expo default template and are not used anywhere 
 - **No input validation on prep time** — `parseInt(prepTime) || 0` silently defaults to 0 for non-numeric input. No error message shown to the user.
 - **`display="calendar"` on date picker** — the native `DateTimePicker` receives `display="calendar"` for the date mode. On Android this renders the calendar view; on iOS `"calendar"` is not a valid display value (valid values are `"default"`, `"spinner"`, `"inline"`, `"compact"`) — iOS silently ignores it and uses the default.
 - **No persistence** — all state is in-memory. Closing the app loses origin, destination, event time, and any scheduled notifications (the notifications themselves are scheduled with the OS and will still fire, but the UI chips will be gone on next open).
+- **Web notifications don't survive reload** — web scheduling uses `setTimeout` + the browser `Notification` API. If the user closes or reloads the tab, pending notifications are lost.
+- **Maps JavaScript API must be enabled** on the same Google Cloud project as the REST key — web Directions calls fail with `ApiNotActivatedMapError` otherwise. Enabled as of 2026-04-14.
+- **International use** — no country restriction in code. Google Maps / Places / Geocoding work globally (with reduced coverage in mainland China, North Korea, and some rural regions). Places Autocomplete returns global results (no `includedRegionCodes` filter). API key should not have country-based referrer restrictions if targeting non-US users.
 
 ---
 
