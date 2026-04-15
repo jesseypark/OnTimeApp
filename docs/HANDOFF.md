@@ -1,6 +1,17 @@
 # Handoff
 
-Current state of the project as of 2026-04-14. Last updated 2026-04-14.
+Current state of the project as of 2026-04-15. Last updated 2026-04-15.
+
+## Session summary (2026-04-15, v11)
+
+- Fixed web CORS failure on "Calculate Leave Time" by loading the Google Maps JS SDK and using `DirectionsService.route()` on web. Native keeps the REST call via axios.
+- Event date / time cards on web now open the browser's native picker directly (`showPicker()` on a hidden `<input>`) instead of showing a second box below the card.
+- Added web notification support using `Notification` API + `setTimeout` (expo-notifications throws on web). Cancel clears the timeout by id.
+- Added a 10s timeout on web Directions so the spinner can't hang when the Maps JS API is disabled.
+- Bumped `version` to `1.0.1` and added `android.versionCode: 2` in `app.json` (Play Console rejects duplicate version codes).
+- Enabled **Maps JavaScript API** on the Google Cloud project for `EXPO_PUBLIC_GOOGLE_MAPS_KEY` (required for web).
+- Built a new AAB via `eas build --platform android --profile production` for closed testing (all countries).
+- Committed + pushed as `v11 - web CORS fix, web notifications, direct date/time picker`.
 
 ---
 
