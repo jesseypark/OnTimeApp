@@ -100,6 +100,18 @@ The native `@react-native-community/datetimepicker` package has no web implement
 
 ---
 
+## EAS environment variables for production builds
+
+The `.env` file is local-only (gitignored) and not available during EAS cloud builds. `EXPO_PUBLIC_GOOGLE_MAPS_KEY` is set via `eas env:create --environment production` so it's injected at build time. This keeps the key out of version control while ensuring production builds have it.
+
+---
+
+## Past event time validation before API call
+
+The Directions API returns `INVALID_REQUEST` when `departure_time` is in the past. Since `eventDate` defaults to `new Date()`, even a short delay filling in the form can push it into the past. The app validates this client-side before making the API call, giving a clear error message instead of a cryptic API failure.
+
+---
+
 ## No second tab (removed in v5)
 
 The commit history shows a second "Explore" tab was removed in v5. `app/modal.tsx` and several components (`hello-wave`, `parallax-scroll-view`, `haptic-tab`, `collapsible`, `external-link`) are scaffolding left over from the Expo template that are no longer used by the main screen. They haven't been deleted, likely to avoid churn, but they're dead code.

@@ -2,6 +2,16 @@
 
 Current state of the project as of 2026-04-15. Last updated 2026-04-15.
 
+## Session summary (2026-04-15, v12 — Play Store fixes)
+
+- **EAS env secret configured** — `EXPO_PUBLIC_GOOGLE_MAPS_KEY` added to EAS production environment via `eas env:create`. Play Store builds were missing the API key (`.env` is local-only), causing autocomplete to silently fail.
+- **Past event time validation** — `calculateLeaveTime` now checks if `eventDate` is in the past and shows an error instead of sending an invalid `departure_time` to the Directions API (which returns `INVALID_REQUEST`).
+- **Improved API error messages** — autocomplete errors now surface HTTP status and detail message. Directions errors now include the raw API status (e.g. `ZERO_RESULTS`, `INVALID_REQUEST`) so users and testers can report meaningful diagnostics.
+- **New production build** — `eas build --platform android --profile production`, versionCode 4. AAB artifact at `https://expo.dev/artifacts/eas/nVcnWDu1QtPVB7svBfb4Xn.aab`.
+- Committed + pushed as `fix: add past event time validation and improve API error messages`.
+
+---
+
 ## Session summary (2026-04-15, v11)
 
 - Fixed web CORS failure on "Calculate Leave Time" by loading the Google Maps JS SDK and using `DirectionsService.route()` on web. Native keeps the REST call via axios.
@@ -52,7 +62,7 @@ These are all leftover from the Expo default template and are not used anywhere 
 
 ## Known issues / things to watch
 
-- **API key exposure** — `EXPO_PUBLIC_GOOGLE_MAPS_KEY` is inlined into the JS bundle and visible to anyone who inspects it. The key should have HTTP referrer or app restrictions in Google Cloud Console if this app is public.
+- **API key exposure** — `EXPO_PUBLIC_GOOGLE_MAPS_KEY` is inlined into the JS bundle and visible to anyone who inspects it. The key should have HTTP referrer or app restrictions in Google Cloud Console if this app is public. Key is currently unrestricted in Google Cloud Console.
 - **Notification scheduling on web** — `expo-notifications` web support is partial. Scheduling via `TIME_INTERVAL` trigger uses browser Notifications API but behavior varies by browser. No fallback or user messaging if it fails silently.
 - **Single debounce timer for both input fields** — typing in origin cancels a pending suggestion fetch for destination and vice versa. Unlikely to cause real problems but worth noting.
 - **No input validation on prep time** — `parseInt(prepTime) || 0` silently defaults to 0 for non-numeric input. No error message shown to the user.
@@ -60,7 +70,7 @@ These are all leftover from the Expo default template and are not used anywhere 
 - **No persistence** — all state is in-memory. Closing the app loses origin, destination, event time, and any scheduled notifications (the notifications themselves are scheduled with the OS and will still fire, but the UI chips will be gone on next open).
 - **Web notifications don't survive reload** — web scheduling uses `setTimeout` + the browser `Notification` API. If the user closes or reloads the tab, pending notifications are lost.
 - **Maps JavaScript API must be enabled** on the same Google Cloud project as the REST key — web Directions calls fail with `ApiNotActivatedMapError` otherwise. Enabled as of 2026-04-14.
-- **International use** — no country restriction in code. Google Maps / Places / Geocoding work globally (with reduced coverage in mainland China, North Korea, and some rural regions). Places Autocomplete returns global results (no `includedRegionCodes` filter). API key should not have country-based referrer restrictions if targeting non-US users.
+- **International use** — no country restriction in code. Google Maps / Places / Geocoding work globally (with reduced coverage in mainland China, North Korea, and some rural regions). Places Autocomplete returns global results (no `includedRegionCodes` filter). API key should not have country-based referrer restrictions if targeting non-US users. **South Korea**: Google Maps Directions API does not support driving routes within South Korea (government data export restrictions). Users in Korea will get `ZERO_RESULTS` — would need Naver or Kakao Maps integration for Korean coverage.
 
 ---
 
