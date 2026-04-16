@@ -222,8 +222,11 @@ export default function HomeScreen() {
         );
         console.log('[fetchSuggestions] response:', response.data);
         setSuggestions(response.data.suggestions || []);
-      } catch (err) {
-        console.log('[fetchSuggestions] error:', err);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const detail = err?.response?.data?.error?.message || err?.message || 'unknown';
+        console.log(`[fetchSuggestions] error: ${status} — ${detail}`);
+        setError(`Autocomplete failed (${status || 'network'}): ${detail}`);
         setSuggestions([]);
       }
     }, 500);
@@ -232,6 +235,7 @@ export default function HomeScreen() {
   async function calculateLeaveTime() {
     if (!origin) { setError('Please enter or detect your starting location.'); return; }
     if (!destination) { setError('Please enter a destination.'); return; }
+    if (eventDate.getTime() < Date.now()) { setError('Event time is in the past. Please select a future date and time.'); return; }
     setLoading(true);
     setError('');
     setResult(null);
@@ -246,7 +250,8 @@ export default function HomeScreen() {
       });
 
       if (directions.status !== 'OK') {
-        setError('Could not find that route. Try being more specific.');
+        console.log(`[calculateLeaveTime] Directions API status: ${directions.status}`);
+        setError(`Could not find that route (${directions.status}). Try being more specific.`);
         setLoading(false);
         return;
       }
