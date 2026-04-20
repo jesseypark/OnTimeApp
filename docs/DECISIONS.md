@@ -166,6 +166,12 @@ The 5 min buffer is shown as a breakdown tile with a ✕ to remove it. When remo
 
 ---
 
-## Traffic level shown as colored border only (no text label)
+## Traffic tile: thicker border, color label, flash on bad
 
-The traffic tile shows +Xm with a colored border (green/orange/red) but no "Good"/"Moderate"/"Heavy" text. The color communicates severity sufficiently, and removing the text keeps the tile compact and consistent with the other tiles that show a value + label.
+The traffic tile has a 2px colored border (green/orange/red) and shows "Good"/"Ok"/"Bad" text below in matching color. When traffic is "Bad", the entire tile pulses using `Animated.loop` (opacity oscillates 1→0.3→1 over 1.2s). This draws attention to severe traffic without being disruptive for normal conditions.
+
+---
+
+## Combined "When" input (date + time in one card)
+
+Date and time are a single card labeled "📅 When" showing "Apr 20, 2026 at 3:00 PM". On web, a full-area hidden `<input type="datetime-local">` opens the native picker. On native, tapping opens the date picker, which auto-chains to the time picker after 300ms. This reduces card count and matches how users think about "when" — a single moment, not separate date and time.

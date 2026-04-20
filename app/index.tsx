@@ -4,7 +4,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform,
+  ActivityIndicator, Animated, Easing, FlatList, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native';
 
@@ -127,28 +127,35 @@ export default function HomeScreen() {
   const debounceTimer = useRef(null);
   const scrollViewRef = useRef(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
-  const timeInputRef = useRef<HTMLInputElement>(null);
   const webTimeouts = useRef<Record<string, any>>({});
+  const trafficFlash = useRef(new Animated.Value(1)).current;
 
-  const webDateValue = (() => {
+  useEffect(() => {
+    if (result?.trafficLevel === 'bad') {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(trafficFlash, { toValue: 0.3, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+          Animated.timing(trafficFlash, { toValue: 1, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      trafficFlash.setValue(1);
+    }
+  }, [result?.trafficLevel]);
+
+  const webDateTimeValue = (() => {
     const y = eventDate.getFullYear();
     const m = String(eventDate.getMonth() + 1).padStart(2, '0');
     const d = String(eventDate.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  })();
-  const webTimeValue = (() => {
     const h = String(eventDate.getHours()).padStart(2, '0');
     const mn = String(eventDate.getMinutes()).padStart(2, '0');
-    return `${h}:${mn}`;
+    return `${y}-${m}-${d}T${h}:${mn}`;
   })();
 
-  const openWebDatePicker = () => {
+  const openWebDateTimePicker = () => {
     const el = dateInputRef.current as any;
-    if (el?.showPicker) el.showPicker();
-    else el?.click();
-  };
-  const openWebTimePicker = () => {
-    const el = timeInputRef.current as any;
     if (el?.showPicker) el.showPicker();
     else el?.click();
   };
@@ -613,25 +620,29 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* Date */}
+      {/* When */}
       <TouchableOpacity
         style={styles.card}
-        onPress={() => Platform.OS === 'web' ? openWebDatePicker() : setShowDatePicker(v => !v)}
+        onPress={() => {
+          if (Platform.OS === 'web') {
+            openWebDateTimePicker();
+          } else {
+            setShowDatePicker(true);
+          }
+        }}
       >
-        <Text style={styles.label}>📅 Arrive by — date</Text>
-        <Text style={styles.pickerValue}>{formatDate(eventDate)}</Text>
+        <Text style={styles.label}>📅 When</Text>
+        <Text style={styles.pickerValue}>{formatDate(eventDate)} at {formatTime(eventDate)}</Text>
         {Platform.OS === 'web' && (
           <input
             ref={dateInputRef}
-            type="date"
-            value={webDateValue}
+            type="datetime-local"
+            value={webDateTimeValue}
             onChange={(e) => {
               const val = e.target.value;
               if (!val) return;
-              const [y, m, d] = val.split('-').map(Number);
-              const updated = new Date(eventDate);
-              updated.setFullYear(y, m - 1, d);
-              setEventDate(updated);
+              const updated = new Date(val);
+              if (!isNaN(updated.getTime())) setEventDate(updated);
             }}
             style={{
               position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
@@ -646,55 +657,28 @@ export default function HomeScreen() {
           mode="date"
           display="calendar"
           onChange={(event, selected) => {
+            setShowDatePicker(false);
             if (selected) {
               const updated = new Date(eventDate);
               updated.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
               setEventDate(updated);
+              setTimeout(() => setShowTimePicker(true), 300);
             }
-            setShowDatePicker(false);
           }}
         />
       )}
-
-      {/* Time */}
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => Platform.OS === 'web' ? openWebTimePicker() : setShowTimePicker(v => !v)}
-      >
-        <Text style={styles.label}>⏰ Arrive by — time</Text>
-        <Text style={styles.pickerValue}>{formatTime(eventDate)}</Text>
-        {Platform.OS === 'web' && (
-          <input
-            ref={timeInputRef}
-            type="time"
-            value={webTimeValue}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (!val) return;
-              const [h, mn] = val.split(':').map(Number);
-              const updated = new Date(eventDate);
-              updated.setHours(h, mn);
-              setEventDate(updated);
-            }}
-            style={{
-              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              opacity: 0, border: 0, padding: 0, cursor: 'pointer',
-            }}
-          />
-        )}
-      </TouchableOpacity>
       {Platform.OS !== 'web' && showTimePicker && (
         <DateTimePicker
           value={eventDate}
           mode="time"
           display="spinner"
           onChange={(event, selected) => {
+            setShowTimePicker(false);
             if (selected) {
               const updated = new Date(eventDate);
               updated.setHours(selected.getHours(), selected.getMinutes());
               setEventDate(updated);
             }
-            setShowTimePicker(false);
           }}
         />
       )}
@@ -703,7 +687,7 @@ export default function HomeScreen() {
       <View style={styles.card}>
         <View style={styles.prepHeader}>
           <View>
-            <Text style={styles.label}>🧴 Prep tasks</Text>
+            <Text style={styles.label}>📋 Prep tasks <Text style={styles.optionalTag}>(optional)</Text></Text>
             <Text style={styles.prepSubtitle}>Things to do before you leave</Text>
           </View>
           <TouchableOpacity style={styles.addButton} onPress={addPrepTask}>
@@ -753,8 +737,8 @@ export default function HomeScreen() {
       <View style={styles.card}>
         <View style={styles.prepHeader}>
           <View>
-            <Text style={styles.label}>🛣️ Extra time</Text>
-            <Text style={styles.prepSubtitle}>Extra time needed after leaving</Text>
+            <Text style={styles.label}>🏁 Arrival tasks <Text style={styles.optionalTag}>(optional)</Text></Text>
+            <Text style={styles.prepSubtitle}>Things to do before you arrive</Text>
           </View>
           <TouchableOpacity style={styles.addButton} onPress={addAlongTask}>
             <Text style={styles.addButtonText}>+</Text>
@@ -765,7 +749,7 @@ export default function HomeScreen() {
             <View style={styles.prepNameWrap}>
               <TextInput
                 style={styles.prepName}
-                placeholder="e.g. Park, Walk, Detours"
+                placeholder="e.g. Park, Walk, Coffee"
                 placeholderTextColor="#aaa"
                 value={task.name}
                 onChangeText={(v) => updateAlongTask(task.id, 'name', v)}
@@ -829,17 +813,20 @@ export default function HomeScreen() {
           <View style={styles.breakdown}>
             <View style={styles.breakdownItem}>
               <Text style={styles.breakdownVal}>{result.drive}m</Text>
-              <Text style={styles.breakdownLbl}>Drive</Text>
+              <Text style={styles.breakdownLbl}>Drive time</Text>
             </View>
-            <View style={[styles.breakdownItem, { borderWidth: 1, borderColor: result.trafficLevel === 'good' ? 'rgba(74,222,128,0.3)' : result.trafficLevel === 'moderate' ? 'rgba(251,146,60,0.3)' : 'rgba(248,113,113,0.3)' }]}>
+            <Animated.View style={[styles.breakdownItem, { borderWidth: 2, borderColor: result.trafficLevel === 'good' ? 'rgba(74,222,128,0.5)' : result.trafficLevel === 'moderate' ? 'rgba(251,146,60,0.5)' : 'rgba(248,113,113,0.5)', opacity: result.trafficLevel === 'bad' ? trafficFlash : 1 }]}>
               <Text style={[styles.breakdownVal, { color: result.trafficLevel === 'good' ? '#4ade80' : result.trafficLevel === 'moderate' ? '#fb923c' : '#f87171' }]}>
                 +{result.traffic}m
               </Text>
               <Text style={styles.breakdownLbl}>Traffic</Text>
-            </View>
+              <Text style={[styles.breakdownLbl, { fontSize: 10, marginTop: 2, color: result.trafficLevel === 'good' ? '#4ade80' : result.trafficLevel === 'moderate' ? '#fb923c' : '#f87171' }]}>
+                {result.trafficLevel === 'good' ? 'Good' : result.trafficLevel === 'moderate' ? 'Ok' : 'Bad'}
+              </Text>
+            </Animated.View>
             <View style={styles.breakdownItem}>
               <Text style={styles.breakdownVal}>{result.along}m</Text>
-              <Text style={styles.breakdownLbl}>Extra time</Text>
+              <Text style={styles.breakdownLbl}>Arrival tasks</Text>
             </View>
             {bufferEnabled ? (
               <TouchableOpacity style={styles.breakdownItem} onPress={() => {
@@ -1012,6 +999,7 @@ const styles = StyleSheet.create({
   input: { fontSize: 16, fontWeight: '600', color: '#1a1a1a' },
   prepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   prepSubtitle: { fontSize: 12, color: '#aaa', marginBottom: 10, marginTop: -6 },
+  optionalTag: { fontSize: 10, color: '#aaa', fontWeight: '400' as const, letterSpacing: 0.5, textTransform: 'none' as const },
   addButton: {
     width: 28, height: 28, borderRadius: 14,
     backgroundColor: '#ff4d1c', alignItems: 'center', justifyContent: 'center',

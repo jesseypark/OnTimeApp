@@ -2,6 +2,17 @@
 
 Current state of the project as of 2026-04-20. Last updated 2026-04-20.
 
+## Session summary (2026-04-20, v15 — rename & combine inputs, tile label updates, traffic flash)
+
+- **Combined "When" input** — date and time merged into a single card. Web uses `<input type="datetime-local">`. Native chains date picker → time picker automatically (300ms delay).
+- **Prep tasks emoji** — changed from 🧴 to 📋.
+- **"Extra time" → "Arrival tasks"** — card renamed with label "🏁 Arrival tasks", subtitle "Things to do once you get there", placeholder "e.g. Park, Walk, Coffee".
+- **Tile label updates** — Drive tile now says "Drive time". Arrival tile says "Arrival tasks". Traffic tile shows "Good"/"Ok"/"Bad" label below in matching color.
+- **Traffic tile border** — thicker (2px) with higher opacity. Pulses/flashes when traffic level is "Bad" using `Animated.loop`.
+- **Favicon** — browser tab icon replaced with the OnTime clock icon (matches Android app icon).
+
+---
+
 ## Session summary (2026-04-20, v14 — extra time, buffer toggle, favicon, UI polish)
 
 - **Extra time card** — new input card "Extra time" with subtitle "Extra time needed after leaving". Handles parking, walking, detours, shuttles — anything between leaving and arriving. Same UI pattern as prep tasks (named items with durations, +/remove/clear). Placeholder: "e.g. Park, Walk, Detours". Included in leave time calculation.
