@@ -1,6 +1,18 @@
 # Handoff
 
-Current state of the project as of 2026-04-15. Last updated 2026-04-15.
+Current state of the project as of 2026-04-19. Last updated 2026-04-19.
+
+## Session summary (2026-04-19, v13 — prep tasks, result redesign, web deployment)
+
+- **Prep tasks** — replaced single prep time input with named task list. Users add tasks (e.g. "Shower", "Pack lunch") with individual durations via a + button. Tasks have clear (✕) buttons on both the name field and the row. Total shown when multiple tasks exist.
+- **"Arrive by" labels** — renamed "Event date" / "Event starts at" to "Arrive by — date" / "Arrive by — time" for more natural language that works for any trip, not just events.
+- **Result card redesign** — "LEAVE BY" is the hero time (drive + traffic + buffer only). "START GETTING READY" shown below in smaller text with hint "X min to get ready before you go". Traffic tile shows Good/Moderate/Heavy with green/orange/red color + "as of [time]".
+- **Refresh button** — recalculates with fresh traffic data without re-entering inputs.
+- **Notifications Android-only** — removed web notification support (unreliable). Non-Android platforms show "Notifications available on the Android app". Android shows "Based on leave time" hint.
+- **Web deployment** — deployed to Vercel as `ontime-app` project. Production URL: `ontime-app-tan.vercel.app`.
+- **Mobile web fixes** — date/time pickers now use full-area hidden inputs (mobile Safari/Chrome don't support `showPicker()` on tiny elements). GPS detection uses `navigator.geolocation` directly + Maps JS SDK Geocoder (CORS-safe).
+
+---
 
 ## Session summary (2026-04-15, v12 — Play Store fixes)
 
@@ -27,10 +39,10 @@ Current state of the project as of 2026-04-15. Last updated 2026-04-15.
 
 ## What's complete and working
 
-- **Core calculation** — origin/destination input, GPS auto-detect, event date/time picking, prep time, drive time + traffic from Google Maps Directions API, leave time result with breakdown (Drive / Traffic / Prep / Buffer tiles).
+- **Core calculation** — origin/destination input, GPS auto-detect, arrival date/time picking, named prep tasks, drive time + traffic from Google Maps Directions API. Result shows "Leave by" time (drive + traffic + buffer) and "Start getting ready" time (leave time minus prep). Traffic indicator (good/moderate/heavy) with color coding and timestamp. Refresh button for updated traffic.
 - **Places Autocomplete** — both origin and destination fields use Google Places API v1 with 500ms debounce and inline suggestion lists.
-- **Notifications** — preset + custom offset selection, scheduling via `expo-notifications` on native and via `Notification` API + `setTimeout` on web, active notification chips with per-notification cancel. Android channel configured for max importance + bypass DND.
-- **Web support** — app runs in the browser. Date/time pickers on web use hidden HTML `<input>` elements triggered via `showPicker()` when the card is tapped (no second display box). Directions on web use the Google Maps JS SDK `DirectionsService` (REST Directions API is CORS-blocked from browsers). Android-only notification channel code is platform-guarded.
+- **Notifications (Android only)** — preset + custom offset selection, scheduling via `expo-notifications`, active notification chips with per-notification cancel. Android channel configured for max importance + bypass DND. Notifications are based on leave time. Non-Android platforms show a text note.
+- **Web support** — app deployed on Vercel (`ontime-app-tan.vercel.app`). Date/time pickers use full-area hidden HTML inputs. Directions use Google Maps JS SDK `DirectionsService`. GPS uses `navigator.geolocation` + Maps JS SDK Geocoder.
 - **App icon + splash** — custom clock icon and warm beige (`#f5f0e8`) splash, both light and dark variants configured.
 - **EAS project configured** — `projectId` in `app.json`, Android package `com.jesseypark.ontimeapp`.
 - **App store assets** — `feature-graphic.png` and `icon-512.png` present in `assets/images/`.
@@ -63,13 +75,13 @@ These are all leftover from the Expo default template and are not used anywhere 
 ## Known issues / things to watch
 
 - **API key exposure** — `EXPO_PUBLIC_GOOGLE_MAPS_KEY` is inlined into the JS bundle and visible to anyone who inspects it. The key should have HTTP referrer or app restrictions in Google Cloud Console if this app is public. Key is currently unrestricted in Google Cloud Console.
-- **Notification scheduling on web** — `expo-notifications` web support is partial. Scheduling via `TIME_INTERVAL` trigger uses browser Notifications API but behavior varies by browser. No fallback or user messaging if it fails silently.
+- **Notifications Android-only** — web and iOS show a text note directing users to the Android app. Web notifications were removed due to unreliability (don't survive tab close).
 - **Single debounce timer for both input fields** — typing in origin cancels a pending suggestion fetch for destination and vice versa. Unlikely to cause real problems but worth noting.
-- **No input validation on prep time** — `parseInt(prepTime) || 0` silently defaults to 0 for non-numeric input. No error message shown to the user.
+- **No input validation on prep task minutes** — `parseInt(minutes) || 0` silently defaults to 0 for non-numeric input. No error message shown to the user.
 - **`display="calendar"` on date picker** — the native `DateTimePicker` receives `display="calendar"` for the date mode. On Android this renders the calendar view; on iOS `"calendar"` is not a valid display value (valid values are `"default"`, `"spinner"`, `"inline"`, `"compact"`) — iOS silently ignores it and uses the default.
 - **No persistence** — all state is in-memory. Closing the app loses origin, destination, event time, and any scheduled notifications (the notifications themselves are scheduled with the OS and will still fire, but the UI chips will be gone on next open).
-- **Web notifications don't survive reload** — web scheduling uses `setTimeout` + the browser `Notification` API. If the user closes or reloads the tab, pending notifications are lost.
 - **Maps JavaScript API must be enabled** on the same Google Cloud project as the REST key — web Directions calls fail with `ApiNotActivatedMapError` otherwise. Enabled as of 2026-04-14.
+- **iOS Safari location permission** — requires both per-site permission ("Allow") AND system-level Settings → Privacy & Security → Location Services → Safari Websites → "While Using the App". Users may need guidance if location fails.
 - **International use** — no country restriction in code. Google Maps / Places / Geocoding work globally (with reduced coverage in mainland China, North Korea, and some rural regions). Places Autocomplete returns global results (no `includedRegionCodes` filter). API key should not have country-based referrer restrictions if targeting non-US users. **South Korea**: Google Maps Directions API does not support driving routes within South Korea (government data export restrictions). Users in Korea will get `ZERO_RESULTS` — would need Naver or Kakao Maps integration for Korean coverage.
 
 ---

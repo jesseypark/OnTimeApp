@@ -2,7 +2,7 @@
 
 ## What this app does
 
-OnTime calculates when you need to leave to arrive at an event on time. You provide an origin, destination, event date/time, and a prep buffer. The app calls Google Maps with real-time traffic, computes your leave time, and lets you schedule push notifications.
+OnTime calculates when you need to leave to arrive somewhere on time. You provide an origin, destination, arrival date/time, and prep tasks. The app calls Google Maps with real-time traffic, computes your leave time and when to start getting ready, and lets you schedule push notifications (Android).
 
 ## Tech stack
 
@@ -56,16 +56,22 @@ User input
       → Places Autocomplete API (debounced 500ms)
       → suggestion list → user selects → sets origin/destination
   → eventDate (date + time combined in one Date object)
-  → prepTime (minutes, string)
+  → prepTasks (array of { id, name, minutes } — named tasks with durations)
 
 Calculate button
   → Directions API (origin, destination, departure_time, traffic_model=best_guess)
-  → leg.duration_in_traffic + prepTime + 5min buffer
-  → leaveDate = eventDate - totalMinutes
-  → result state: { leaveTime, leaveDate, drive, traffic, prep, destination, origin }
+  → leaveDate = eventDate - (driveMinutes + 5min buffer)
+  → prepStartDate = leaveDate - totalPrepMinutes
+  → trafficLevel = good/moderate/bad based on traffic ratio vs base drive time
+  → result state: { leaveTime, leaveDate, prepStartTime, prepStartDate, drive,
+      traffic, trafficLevel, calculatedAt, prep, destination, origin }
 
-Set Notifications button (shown after result)
+Refresh button (shown in result card)
+  → re-runs calculateLeaveTime with same inputs to get updated traffic
+
+Set Notifications button (Android only, shown after result)
   → user picks presets + optional custom minutes
+  → notifications are based on leave time (not prep start time)
   → scheduleNotificationAsync with TIME_INTERVAL trigger per selection
   → scheduledNotifs state tracks { id, label, minutesBefore, triggerTime }
   → individual notifs cancellable via chip UI
@@ -77,9 +83,10 @@ Set Notifications button (shown after result)
 |-----|--------|-----------|
 | Google Maps Directions | GET `maps.googleapis.com/maps/api/directions/json` | `key` query param |
 | Google Places Autocomplete v1 | POST `places.googleapis.com/v1/places:autocomplete` | `X-Goog-Api-Key` header |
-| Google Geocoding (reverse) | GET `maps.googleapis.com/maps/api/geocode/json` | `key` query param |
+| Google Geocoding (reverse, native) | GET `maps.googleapis.com/maps/api/geocode/json` | `key` query param |
+| Google Geocoding (reverse, web) | `google.maps.Geocoder` via Maps JS SDK | loaded via script tag |
 
-All three use the same `EXPO_PUBLIC_GOOGLE_MAPS_KEY`.
+All use the same `EXPO_PUBLIC_GOOGLE_MAPS_KEY`.
 
 ## Platform differences
 
@@ -87,6 +94,6 @@ All three use the same `EXPO_PUBLIC_GOOGLE_MAPS_KEY`.
 |---------|-----|---------|-----|
 | Date picker | Native calendar (`display="calendar"`) | Native calendar | HTML `<input type="date">` |
 | Time picker | Native spinner (`display="spinner"`) | Native spinner | HTML `<input type="time">` |
-| Notifications | Full support | Full support (custom channel) | Partial — browser Notifications API |
-| GPS | `expo-location` | `expo-location` | Browser Geolocation API |
+| Notifications | Full support | Full support (custom channel) | Not available (message shown) |
+| GPS | `expo-location` | `expo-location` | `navigator.geolocation` + Maps JS SDK Geocoder |
 | Icons | SF Symbols | MaterialIcons | MaterialIcons |

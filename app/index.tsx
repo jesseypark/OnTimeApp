@@ -107,7 +107,7 @@ export default function HomeScreen() {
   const [originCoords, setOriginCoords] = useState(null);
   const [destination, setDestination] = useState('');
   const [eventDate, setEventDate] = useState(new Date());
-  const [prepTime, setPrepTime] = useState('15');
+  const [prepTasks, setPrepTasks] = useState([{ id: '1', name: 'Get ready', minutes: '15' }]);
   const [result, setResult] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -188,24 +188,66 @@ export default function HomeScreen() {
     setLocationLoading(true);
     setError('');
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setError('Location permission denied. Please enter your starting point manually.');
-        setLocationLoading(false);
-        return;
+      let latitude: number, longitude: number;
+
+      if (Platform.OS === 'web') {
+        if (!navigator.geolocation) {
+          setError('Location is not supported by this browser.');
+          setLocationLoading(false);
+          return;
+        }
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 60000,
+          });
+        });
+        latitude = pos.coords.latitude;
+        longitude = pos.coords.longitude;
+      } else {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setError('Location permission denied. Please enter your starting point manually.');
+          setLocationLoading(false);
+          return;
+        }
+        const loc = await Location.getCurrentPositionAsync({});
+        latitude = loc.coords.latitude;
+        longitude = loc.coords.longitude;
       }
-      const loc = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = loc.coords;
-      const geoResponse = await axios.get(
-        'https://maps.googleapis.com/maps/api/geocode/json',
-        { params: { latlng: `${latitude},${longitude}`, key: GOOGLE_API_KEY } }
-      );
-      const address = geoResponse.data.results[0]?.formatted_address || 'Current Location';
+
+      let address = 'Current Location';
+      if (Platform.OS === 'web') {
+        try {
+          const google = await loadMapsApi();
+          const geocoder = new google.maps.Geocoder();
+          const res = await geocoder.geocode({ location: { lat: latitude, lng: longitude } });
+          if (res.results?.[0]) address = res.results[0].formatted_address;
+        } catch {
+          // Geocoding failed but we still have coords
+        }
+      } else {
+        const geoResponse = await axios.get(
+          'https://maps.googleapis.com/maps/api/geocode/json',
+          { params: { latlng: `${latitude},${longitude}`, key: GOOGLE_API_KEY } }
+        );
+        address = geoResponse.data.results[0]?.formatted_address || address;
+      }
+
       setOrigin(address);
       setOriginCoords({ latitude, longitude });
       setOriginSuggestions([]);
-    } catch {
-      setError('Could not detect location. Try entering it manually.');
+    } catch (e: any) {
+      if (e?.code === 1) {
+        setError('Location permission denied. Please allow location access in your browser settings.');
+      } else if (e?.code === 2) {
+        setError('Location unavailable. Make sure location services are enabled.');
+      } else if (e?.code === 3) {
+        setError('Location request timed out. Please try again.');
+      } else {
+        setError('Could not detect location. Try entering it manually.');
+      }
     }
     setLocationLoading(false);
   }
@@ -230,6 +272,23 @@ export default function HomeScreen() {
         setSuggestions([]);
       }
     }, 500);
+  }
+
+  function addPrepTask() {
+    const id = Date.now().toString();
+    setPrepTasks(prev => [...prev, { id, name: '', minutes: '' }]);
+  }
+
+  function updatePrepTask(id: string, field: 'name' | 'minutes', value: string) {
+    setPrepTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+  }
+
+  function removePrepTask(id: string) {
+    setPrepTasks(prev => prev.filter(t => t.id !== id));
+  }
+
+  function getTotalPrep() {
+    return prepTasks.reduce((sum, t) => sum + (parseInt(t.minutes) || 0), 0);
   }
 
   async function calculateLeaveTime() {
@@ -262,17 +321,25 @@ export default function HomeScreen() {
       const driveMinutes = Math.round(driveSeconds / 60);
       const baseMinutes = Math.round(baseSeconds / 60);
       const trafficMinutes = driveMinutes - baseMinutes;
-      const prep = parseInt(prepTime) || 0;
-      const totalMinutes = driveMinutes + prep + 5;
-      const leaveDate = new Date(eventDate.getTime() - totalMinutes * 60000);
+      const prep = getTotalPrep();
+      const leaveMinutes = driveMinutes + 5;
+      const leaveDate = new Date(eventDate.getTime() - leaveMinutes * 60000);
+      const prepStartDate = new Date(leaveDate.getTime() - prep * 60000);
+      const trafficRatio = baseMinutes > 0 ? trafficMinutes / baseMinutes : 0;
+      const trafficLevel = trafficRatio < 0.2 ? 'good' : trafficRatio < 0.5 ? 'moderate' : 'bad';
+      const calculatedAt = new Date();
 
       setResult({
         leaveTime: formatTime(leaveDate),
         leaveDate,
+        prepStartTime: formatTime(prepStartDate),
+        prepStartDate,
         eventTime: formatTime(eventDate),
         eventDate: formatDate(eventDate),
         drive: baseMinutes,
         traffic: trafficMinutes,
+        trafficLevel,
+        calculatedAt: formatTime(calculatedAt),
         prep,
         destination: leg.end_address,
         origin: leg.start_address,
@@ -529,7 +596,7 @@ export default function HomeScreen() {
         style={styles.card}
         onPress={() => Platform.OS === 'web' ? openWebDatePicker() : setShowDatePicker(v => !v)}
       >
-        <Text style={styles.label}>📅 Event date</Text>
+        <Text style={styles.label}>📅 Arrive by — date</Text>
         <Text style={styles.pickerValue}>{formatDate(eventDate)}</Text>
         {Platform.OS === 'web' && (
           <input
@@ -545,8 +612,8 @@ export default function HomeScreen() {
               setEventDate(updated);
             }}
             style={{
-              position: 'absolute', width: 1, height: 1, opacity: 0,
-              pointerEvents: 'none', border: 0, padding: 0, bottom: 0, left: 0,
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              opacity: 0, border: 0, padding: 0, cursor: 'pointer',
             }}
           />
         )}
@@ -572,7 +639,7 @@ export default function HomeScreen() {
         style={styles.card}
         onPress={() => Platform.OS === 'web' ? openWebTimePicker() : setShowTimePicker(v => !v)}
       >
-        <Text style={styles.label}>⏰ Event starts at</Text>
+        <Text style={styles.label}>⏰ Arrive by — time</Text>
         <Text style={styles.pickerValue}>{formatTime(eventDate)}</Text>
         {Platform.OS === 'web' && (
           <input
@@ -588,8 +655,8 @@ export default function HomeScreen() {
               setEventDate(updated);
             }}
             style={{
-              position: 'absolute', width: 1, height: 1, opacity: 0,
-              pointerEvents: 'none', border: 0, padding: 0, bottom: 0, left: 0,
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              opacity: 0, border: 0, padding: 0, cursor: 'pointer',
             }}
           />
         )}
@@ -610,17 +677,54 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* Prep Time */}
+      {/* Prep Tasks */}
       <View style={styles.card}>
-        <Text style={styles.label}>🧴 Prep Time (Minutes)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="15"
-          placeholderTextColor="#aaa"
-          keyboardType="numeric"
-          value={prepTime}
-          onChangeText={setPrepTime}
-        />
+        <View style={styles.prepHeader}>
+          <View>
+            <Text style={styles.label}>🧴 Prep tasks</Text>
+            <Text style={styles.prepSubtitle}>Things to do before you leave</Text>
+          </View>
+          <TouchableOpacity style={styles.addButton} onPress={addPrepTask}>
+            <Text style={styles.addButtonText}>+</Text>
+          </TouchableOpacity>
+        </View>
+        {prepTasks.map((task) => (
+          <View key={task.id} style={styles.prepRow}>
+            <View style={styles.prepNameWrap}>
+              <TextInput
+                style={styles.prepName}
+                placeholder="Task name"
+                placeholderTextColor="#aaa"
+                value={task.name}
+                onChangeText={(v) => updatePrepTask(task.id, 'name', v)}
+              />
+              {task.name.length > 0 && (
+                <TouchableOpacity style={styles.prepNameClear} onPress={() => updatePrepTask(task.id, 'name', '')}>
+                  <Text style={styles.prepNameClearText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={styles.prepMinutesWrap}>
+              <TextInput
+                style={styles.prepMinutes}
+                placeholder="0"
+                placeholderTextColor="#aaa"
+                keyboardType="numeric"
+                value={task.minutes}
+                onChangeText={(v) => updatePrepTask(task.id, 'minutes', v)}
+              />
+              <Text style={styles.prepMinutesUnit}>min</Text>
+            </View>
+            {prepTasks.length > 1 && (
+              <TouchableOpacity style={styles.removeTask} onPress={() => removePrepTask(task.id)}>
+                <Text style={styles.removeTaskText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+        {prepTasks.length > 1 && (
+          <Text style={styles.prepTotal}>Total: {getTotalPrep()} min</Text>
+        )}
       </View>
 
       {/* Calculate Button */}
@@ -650,18 +754,28 @@ export default function HomeScreen() {
           <Text style={styles.resultDest}>to reach {result.destination}</Text>
           <Text style={styles.resultDateLine}>on {result.eventDate} at {result.eventTime}</Text>
 
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={calculateLeaveTime}
+            disabled={loading}
+          >
+            {loading
+              ? <ActivityIndicator size="small" color="#ff4d1c" />
+              : <Text style={styles.refreshButtonText}>↻ Refresh</Text>
+            }
+          </TouchableOpacity>
+
           <View style={styles.breakdown}>
             <View style={styles.breakdownItem}>
               <Text style={styles.breakdownVal}>{result.drive}m</Text>
               <Text style={styles.breakdownLbl}>Drive</Text>
             </View>
-            <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownVal}>+{result.traffic}m</Text>
+            <View style={[styles.breakdownItem, { borderWidth: 1, borderColor: result.trafficLevel === 'good' ? 'rgba(74,222,128,0.3)' : result.trafficLevel === 'moderate' ? 'rgba(251,146,60,0.3)' : 'rgba(248,113,113,0.3)' }]}>
+              <Text style={[styles.breakdownVal, { color: result.trafficLevel === 'good' ? '#4ade80' : result.trafficLevel === 'moderate' ? '#fb923c' : '#f87171' }]}>
+                {result.trafficLevel === 'good' ? 'Good' : result.trafficLevel === 'moderate' ? 'Moderate' : 'Heavy'}
+              </Text>
               <Text style={styles.breakdownLbl}>Traffic</Text>
-            </View>
-            <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownVal}>{result.prep}m</Text>
-              <Text style={styles.breakdownLbl}>Prep</Text>
+              <Text style={styles.breakdownSub}>as of {result.calculatedAt}</Text>
             </View>
             <View style={styles.breakdownItem}>
               <Text style={styles.breakdownVal}>5m</Text>
@@ -669,36 +783,51 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={styles.notifButton}
-            onPress={() => setShowNotifModal(true)}
-          >
-            <Text style={styles.notifButtonText}>🔔 Set Notifications</Text>
-          </TouchableOpacity>
-
-          {scheduledNotifs.length > 0 && (
-            <View style={styles.chipsContainer}>
-              <Text style={styles.chipsLabel}>ACTIVE NOTIFICATIONS</Text>
-              {scheduledNotifs.map((notif) => (
-                <View key={notif.id} style={styles.chip}>
-                  <Text style={styles.chipText}>
-                    🔔 {formatChipText(notif)}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => cancelNotification(notif.id)}
-                    style={styles.chipCancel}
-                  >
-                    <Text style={styles.chipCancelText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+          {result.prep > 0 && (
+            <View style={styles.prepReadySection}>
+              <Text style={styles.prepReadyLabel}>START GETTING READY</Text>
+              <Text style={styles.prepReadyTime}>{result.prepStartTime}</Text>
+              <Text style={styles.prepReadyHint}>{result.prep} min to get ready before you go</Text>
             </View>
+          )}
+
+          {Platform.OS === 'android' ? (
+            <>
+              <TouchableOpacity
+                style={styles.notifButton}
+                onPress={() => setShowNotifModal(true)}
+              >
+                <Text style={styles.notifButtonText}>🔔 Set Notifications</Text>
+              </TouchableOpacity>
+              <Text style={styles.notifHint}>Based on leave time</Text>
+
+              {scheduledNotifs.length > 0 && (
+                <View style={styles.chipsContainer}>
+                  <Text style={styles.chipsLabel}>ACTIVE NOTIFICATIONS</Text>
+                  {scheduledNotifs.map((notif) => (
+                    <View key={notif.id} style={styles.chip}>
+                      <Text style={styles.chipText}>
+                        🔔 {formatChipText(notif)}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => cancelNotification(notif.id)}
+                        style={styles.chipCancel}
+                      >
+                        <Text style={styles.chipCancelText}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </>
+          ) : (
+            <Text style={styles.notifUnavailable}>Notifications available on the Android app</Text>
           )}
         </View>
       )}
 
       {/* Notification Modal */}
-      {showNotifModal && (
+      {Platform.OS === 'android' && showNotifModal && (
         <Modal transparent animationType="slide">
           <KeyboardAvoidingView
             style={{ flex: 1 }}
@@ -793,6 +922,47 @@ const styles = StyleSheet.create({
     letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
   },
   input: { fontSize: 16, fontWeight: '600', color: '#1a1a1a' },
+  prepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  prepSubtitle: { fontSize: 12, color: '#aaa', marginBottom: 10, marginTop: -6 },
+  addButton: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: '#ff4d1c', alignItems: 'center', justifyContent: 'center',
+    marginBottom: 10,
+  },
+  addButtonText: { color: '#fff', fontSize: 18, fontWeight: '700', lineHeight: 20 },
+  prepRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8,
+  },
+  prepNameWrap: { flex: 1, position: 'relative', justifyContent: 'center' },
+  prepName: {
+    fontSize: 15, fontWeight: '600', color: '#1a1a1a',
+    backgroundColor: '#f9f6f0', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    paddingRight: 30,
+  },
+  prepNameClear: {
+    position: 'absolute', right: 8,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: '#c7c7cc', alignItems: 'center', justifyContent: 'center',
+  },
+  prepNameClearText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  prepMinutesWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#f9f6f0', borderRadius: 10, paddingRight: 8,
+  },
+  prepMinutes: {
+    width: 40, fontSize: 15, fontWeight: '700', color: '#1a1a1a', textAlign: 'center',
+    paddingHorizontal: 6, paddingVertical: 10,
+  },
+  prepMinutesUnit: { fontSize: 12, color: '#aaa', fontWeight: '600' },
+  removeTask: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#e0dbd3', alignItems: 'center', justifyContent: 'center',
+  },
+  removeTaskText: { color: '#888', fontSize: 11, fontWeight: '700' },
+  prepTotal: {
+    fontSize: 13, fontWeight: '700', color: '#ff4d1c',
+    textAlign: 'right', marginTop: 4,
+  },
   pickerValue: { fontSize: 16, fontWeight: '600', color: '#1a1a1a' },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   gpsButton: {
@@ -827,6 +997,25 @@ const styles = StyleSheet.create({
     letterSpacing: 2, marginBottom: 8,
   },
   resultTime: { fontSize: 56, fontWeight: '800', color: '#fff', letterSpacing: -1 },
+  refreshButton: {
+    marginTop: 12, marginBottom: 16, paddingVertical: 6, paddingHorizontal: 16,
+    borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+  },
+  refreshButtonText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '600' },
+  prepReadySection: {
+    width: '100%', marginTop: 16, paddingTop: 16,
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+  },
+  prepReadyLabel: {
+    fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.35)',
+    letterSpacing: 1.5, marginBottom: 4,
+  },
+  prepReadyTime: { fontSize: 28, fontWeight: '700', color: '#ff4d1c' },
+  prepReadyHint: {
+    fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 4,
+  },
   resultDest: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 },
   resultDateLine: {
     fontSize: 12, color: 'rgba(255,255,255,0.35)',
@@ -841,6 +1030,18 @@ const styles = StyleSheet.create({
   breakdownLbl: {
     fontSize: 10, color: 'rgba(255,255,255,0.5)',
     marginTop: 2, fontWeight: '600', letterSpacing: 0.5,
+  },
+  breakdownSub: {
+    fontSize: 9, color: 'rgba(255,255,255,0.3)',
+    marginTop: 2, fontWeight: '500',
+  },
+  notifHint: {
+    color: 'rgba(255,255,255,0.35)', fontSize: 12,
+    textAlign: 'center', marginTop: 6,
+  },
+  notifUnavailable: {
+    marginTop: 20, color: 'rgba(255,255,255,0.4)', fontSize: 13,
+    textAlign: 'center', fontStyle: 'italic',
   },
   notifButton: {
     marginTop: 20, backgroundColor: 'rgba(255,255,255,0.1)',

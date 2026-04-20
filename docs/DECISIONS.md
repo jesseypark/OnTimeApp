@@ -82,9 +82,9 @@ The REST Directions endpoint (`maps.googleapis.com/maps/api/directions/json`) do
 
 ---
 
-## Web date/time cards open the picker directly via `showPicker()`
+## Web date/time cards use full-area hidden inputs
 
-To avoid showing a second box below the "Event date" / "Event starts at" card on web, the `<input type="date|time">` is rendered inside the card but visually hidden (1px, opacity 0, pointer-events none). Tapping the card calls `ref.showPicker()` (with a `.click()` fallback for older browsers), which opens the browser's native date/time picker. The card itself continues to display the formatted value. Native platforms keep the existing toggle-to-show inline picker flow.
+The `<input type="date|time">` is rendered inside each card as a full-area overlay (100% width/height, opacity 0). On desktop, `showPicker()` is called programmatically. On mobile, tapping anywhere on the card directly hits the invisible input, which opens the native browser picker. The previous approach (1px hidden input with `showPicker()`) didn't work on mobile Safari/Chrome because `showPicker()` requires a user gesture on the element itself.
 
 ---
 
@@ -115,3 +115,39 @@ The Directions API returns `INVALID_REQUEST` when `departure_time` is in the pas
 ## No second tab (removed in v5)
 
 The commit history shows a second "Explore" tab was removed in v5. `app/modal.tsx` and several components (`hello-wave`, `parallax-scroll-view`, `haptic-tab`, `collapsible`, `external-link`) are scaffolding left over from the Expo template that are no longer used by the main screen. They haven't been deleted, likely to avoid churn, but they're dead code.
+
+---
+
+## Prep tasks as named list instead of single number
+
+Users add named prep tasks (e.g. "Shower", "Pack lunch") with individual durations. This replaces the single "prep time in minutes" input. The total is summed automatically. Prep time is subtracted from leave time to produce a "start getting ready" time — leave time itself only accounts for drive + traffic + buffer.
+
+---
+
+## Leave time vs start getting ready — separate concepts
+
+Leave time = arrival time minus drive, traffic, and 5min buffer. Start getting ready = leave time minus total prep. Notifications are based on leave time, not prep start. This separation lets users see both "when to start tasks" and "when to walk out the door" clearly.
+
+---
+
+## Traffic level indicator (good/moderate/bad)
+
+Traffic severity is derived from the ratio of traffic delay to base drive time: < 20% = good (green), 20–50% = moderate (orange), > 50% = heavy (red). The result card shows the level with color coding and "as of [time]" so users know when the data was pulled. A refresh button lets users recalculate without re-entering inputs.
+
+---
+
+## Notifications limited to Android
+
+Web notifications were unreliable (don't survive tab close, inconsistent browser support). iOS doesn't support `expo-notifications` without a native build. Notifications are now Android-only, with a text note on other platforms: "Notifications available on the Android app."
+
+---
+
+## Web GPS uses navigator.geolocation directly
+
+`expo-location` wraps `navigator.geolocation` on web but adds overhead and inconsistent error handling. Using the browser API directly with explicit `enableHighAccuracy`, timeout, and error code handling gives better results. Reverse geocoding on web uses the Maps JS SDK `Geocoder` (CORS-safe) instead of the REST Geocoding API.
+
+---
+
+## Web deployment on Vercel
+
+The app is deployed as a static site on Vercel from the `dist/` folder produced by `npx expo export --platform web`. The Vercel project is named `ontime-app` and the production URL is `ontime-app-tan.vercel.app`. A `vercel.json` with rewrites handles client-side routing.
