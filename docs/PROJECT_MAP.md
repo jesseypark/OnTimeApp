@@ -57,17 +57,22 @@ User input
       → suggestion list → user selects → sets origin/destination
   → eventDate (date + time combined in one Date object)
   → prepTasks (array of { id, name, minutes } — named tasks with durations)
+  → alongTasks (array of { id, name, minutes } — extra time after leaving: parking, walking, detours)
+  → bufferEnabled (boolean — toggleable 5 min buffer)
 
 Calculate button
   → Directions API (origin, destination, departure_time, traffic_model=best_guess)
-  → leaveDate = eventDate - (driveMinutes + 5min buffer)
+  → leaveDate = eventDate - (driveMinutes + alongMinutes + buffer)
   → prepStartDate = leaveDate - totalPrepMinutes
   → trafficLevel = good/moderate/bad based on traffic ratio vs base drive time
   → result state: { leaveTime, leaveDate, prepStartTime, prepStartDate, drive,
-      traffic, trafficLevel, calculatedAt, prep, destination, origin }
+      traffic, trafficLevel, calculatedAt, prep, along, destination, origin }
 
-Refresh button (shown in result card)
+Refresh link (shown below breakdown tiles)
   → re-runs calculateLeaveTime with same inputs to get updated traffic
+
+Buffer toggle (✕ on buffer tile)
+  → removes/adds 5 min buffer, recalculates leave and prep start times instantly
 
 Set Notifications button (Android only, shown after result)
   → user picks presets + optional custom minutes

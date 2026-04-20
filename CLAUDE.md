@@ -60,7 +60,7 @@ Expo Router file-based routing. Single route: `/` (home). Modal at `/modal` exis
 
 ### State management
 
-No global state library. All state is local to `app/index.tsx`. Key state: `origin`/`destination`/`originCoords`, `eventDate`, `prepTasks` (array of named tasks with durations), `result` (computed leave time + prep start time + breakdown), `scheduledNotifs`.
+No global state library. All state is local to `app/index.tsx`. Key state: `origin`/`destination`/`originCoords`, `eventDate`, `prepTasks` (named tasks before leaving), `alongTasks` (extra time after leaving), `bufferEnabled` (toggleable 5 min buffer), `result` (computed leave time + prep start time + breakdown), `scheduledNotifs`.
 
 ### Platform notes
 

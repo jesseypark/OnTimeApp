@@ -1,13 +1,24 @@
 # Handoff
 
-Current state of the project as of 2026-04-19. Last updated 2026-04-19.
+Current state of the project as of 2026-04-20. Last updated 2026-04-20.
+
+## Session summary (2026-04-20, v14 — extra time, buffer toggle, favicon, UI polish)
+
+- **Extra time card** — new input card "Extra time" with subtitle "Extra time needed after leaving". Handles parking, walking, detours, shuttles — anything between leaving and arriving. Same UI pattern as prep tasks (named items with durations, +/remove/clear). Placeholder: "e.g. Park, Walk, Detours". Included in leave time calculation.
+- **Buffer toggle** — 5 min buffer is now a tile in the breakdown row. Tap ✕ to remove it (times recalculate instantly). When removed, tile dims and shows "+ Add" to re-enable.
+- **Traffic tile** — now shows +Xm with colored border (green/orange/red). Traffic level words removed — color is sufficient.
+- **Traffic refresh** — "Traffic as of X time · Refresh" text below tiles with tappable link.
+- **Favicon** — browser tab icon replaced with the OnTime clock icon (matches Android app icon).
+- **Prep tasks** — default row now starts empty with placeholder "e.g. Cook, Shower, Change" and empty minutes field.
+- **Result card** — "to reach [address]" centered. Refresh button removed from tiles, replaced by inline text link.
+
+---
 
 ## Session summary (2026-04-19, v13 — prep tasks, result redesign, web deployment)
 
-- **Prep tasks** — replaced single prep time input with named task list. Users add tasks (e.g. "Shower", "Pack lunch") with individual durations via a + button. Tasks have clear (✕) buttons on both the name field and the row. Total shown when multiple tasks exist.
+- **Prep tasks** — replaced single prep time input with named task list. Users add tasks with individual durations via a + button. Tasks have clear (✕) buttons on both the name field and the row. Total shown when multiple tasks exist.
 - **"Arrive by" labels** — renamed "Event date" / "Event starts at" to "Arrive by — date" / "Arrive by — time" for more natural language that works for any trip, not just events.
-- **Result card redesign** — "LEAVE BY" is the hero time (drive + traffic + buffer only). "START GETTING READY" shown below in smaller text with hint "X min to get ready before you go". Traffic tile shows Good/Moderate/Heavy with green/orange/red color + "as of [time]".
-- **Refresh button** — recalculates with fresh traffic data without re-entering inputs.
+- **Result card redesign** — "LEAVE BY" is the hero time (drive + traffic + buffer only). "START GETTING READY" shown below in smaller text with hint "X min to get ready before you go".
 - **Notifications Android-only** — removed web notification support (unreliable). Non-Android platforms show "Notifications available on the Android app". Android shows "Based on leave time" hint.
 - **Web deployment** — deployed to Vercel as `ontime-app` project. Production URL: `ontime-app-tan.vercel.app`.
 - **Mobile web fixes** — date/time pickers now use full-area hidden inputs (mobile Safari/Chrome don't support `showPicker()` on tiny elements). GPS detection uses `navigator.geolocation` directly + Maps JS SDK Geocoder (CORS-safe).
@@ -39,7 +50,7 @@ Current state of the project as of 2026-04-19. Last updated 2026-04-19.
 
 ## What's complete and working
 
-- **Core calculation** — origin/destination input, GPS auto-detect, arrival date/time picking, named prep tasks, drive time + traffic from Google Maps Directions API. Result shows "Leave by" time (drive + traffic + buffer) and "Start getting ready" time (leave time minus prep). Traffic indicator (good/moderate/heavy) with color coding and timestamp. Refresh button for updated traffic.
+- **Core calculation** — origin/destination input, GPS auto-detect, arrival date/time picking, named prep tasks, extra time tasks, drive time + traffic from Google Maps Directions API. Result shows "Leave by" time (drive + traffic + extra time + optional buffer) and "Start getting ready" time (leave time minus prep). Traffic shown as +Xm with colored border. Tappable refresh link for updated traffic. Buffer removable via tile ✕.
 - **Places Autocomplete** — both origin and destination fields use Google Places API v1 with 500ms debounce and inline suggestion lists.
 - **Notifications (Android only)** — preset + custom offset selection, scheduling via `expo-notifications`, active notification chips with per-notification cancel. Android channel configured for max importance + bypass DND. Notifications are based on leave time. Non-Android platforms show a text note.
 - **Web support** — app deployed on Vercel (`ontime-app-tan.vercel.app`). Date/time pickers use full-area hidden HTML inputs. Directions use Google Maps JS SDK `DirectionsService`. GPS uses `navigator.geolocation` + Maps JS SDK Geocoder.

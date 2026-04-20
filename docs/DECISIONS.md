@@ -151,3 +151,21 @@ Web notifications were unreliable (don't survive tab close, inconsistent browser
 ## Web deployment on Vercel
 
 The app is deployed as a static site on Vercel from the `dist/` folder produced by `npx expo export --platform web`. The Vercel project is named `ontime-app` and the production URL is `ontime-app-tan.vercel.app`. A `vercel.json` with rewrites handles client-side routing.
+
+---
+
+## "Extra time" as a separate input from prep tasks
+
+Prep tasks happen before leaving (cook, shower, change). Extra time happens after leaving but before arriving (parking, walking, shuttle, detours). They affect the calculation differently: prep is subtracted from leave time to get "start getting ready" time, while extra time is added to drive time to push leave time earlier. Keeping them separate makes the mental model clear.
+
+---
+
+## Buffer as a removable tile instead of a toggle switch
+
+The 5 min buffer is shown as a breakdown tile with a ✕ to remove it. When removed, leave time and start getting ready time recalculate instantly without an API call (just shifts by 5 minutes). The tile dims and shows "+ Add" to re-enable. This keeps the buffer visible in the breakdown and lets power users who don't want padding remove it.
+
+---
+
+## Traffic level shown as colored border only (no text label)
+
+The traffic tile shows +Xm with a colored border (green/orange/red) but no "Good"/"Moderate"/"Heavy" text. The color communicates severity sufficiently, and removing the text keeps the tile compact and consistent with the other tiles that show a value + label.

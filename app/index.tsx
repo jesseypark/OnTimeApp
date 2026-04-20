@@ -107,7 +107,9 @@ export default function HomeScreen() {
   const [originCoords, setOriginCoords] = useState(null);
   const [destination, setDestination] = useState('');
   const [eventDate, setEventDate] = useState(new Date());
-  const [prepTasks, setPrepTasks] = useState([{ id: '1', name: 'Get ready', minutes: '15' }]);
+  const [prepTasks, setPrepTasks] = useState([{ id: '1', name: '', minutes: '' }]);
+  const [alongTasks, setAlongTasks] = useState([{ id: '1', name: '', minutes: '' }]);
+  const [bufferEnabled, setBufferEnabled] = useState(true);
   const [result, setResult] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -291,6 +293,23 @@ export default function HomeScreen() {
     return prepTasks.reduce((sum, t) => sum + (parseInt(t.minutes) || 0), 0);
   }
 
+  function addAlongTask() {
+    const id = Date.now().toString();
+    setAlongTasks(prev => [...prev, { id, name: '', minutes: '' }]);
+  }
+
+  function updateAlongTask(id: string, field: 'name' | 'minutes', value: string) {
+    setAlongTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+  }
+
+  function removeAlongTask(id: string) {
+    setAlongTasks(prev => prev.filter(t => t.id !== id));
+  }
+
+  function getTotalAlong() {
+    return alongTasks.reduce((sum, t) => sum + (parseInt(t.minutes) || 0), 0);
+  }
+
   async function calculateLeaveTime() {
     if (!origin) { setError('Please enter or detect your starting location.'); return; }
     if (!destination) { setError('Please enter a destination.'); return; }
@@ -322,7 +341,9 @@ export default function HomeScreen() {
       const baseMinutes = Math.round(baseSeconds / 60);
       const trafficMinutes = driveMinutes - baseMinutes;
       const prep = getTotalPrep();
-      const leaveMinutes = driveMinutes + 5;
+      const along = getTotalAlong();
+      const buffer = bufferEnabled ? 5 : 0;
+      const leaveMinutes = driveMinutes + along + buffer;
       const leaveDate = new Date(eventDate.getTime() - leaveMinutes * 60000);
       const prepStartDate = new Date(leaveDate.getTime() - prep * 60000);
       const trafficRatio = baseMinutes > 0 ? trafficMinutes / baseMinutes : 0;
@@ -341,6 +362,7 @@ export default function HomeScreen() {
         trafficLevel,
         calculatedAt: formatTime(calculatedAt),
         prep,
+        along,
         destination: leg.end_address,
         origin: leg.start_address,
       });
@@ -693,7 +715,7 @@ export default function HomeScreen() {
             <View style={styles.prepNameWrap}>
               <TextInput
                 style={styles.prepName}
-                placeholder="Task name"
+                placeholder="e.g. Cook, Shower, Change"
                 placeholderTextColor="#aaa"
                 value={task.name}
                 onChangeText={(v) => updatePrepTask(task.id, 'name', v)}
@@ -727,6 +749,56 @@ export default function HomeScreen() {
         )}
       </View>
 
+      {/* Along the Way */}
+      <View style={styles.card}>
+        <View style={styles.prepHeader}>
+          <View>
+            <Text style={styles.label}>🛣️ Extra time</Text>
+            <Text style={styles.prepSubtitle}>Extra time needed after leaving</Text>
+          </View>
+          <TouchableOpacity style={styles.addButton} onPress={addAlongTask}>
+            <Text style={styles.addButtonText}>+</Text>
+          </TouchableOpacity>
+        </View>
+        {alongTasks.map((task) => (
+          <View key={task.id} style={styles.prepRow}>
+            <View style={styles.prepNameWrap}>
+              <TextInput
+                style={styles.prepName}
+                placeholder="e.g. Park, Walk, Detours"
+                placeholderTextColor="#aaa"
+                value={task.name}
+                onChangeText={(v) => updateAlongTask(task.id, 'name', v)}
+              />
+              {task.name.length > 0 && (
+                <TouchableOpacity style={styles.prepNameClear} onPress={() => updateAlongTask(task.id, 'name', '')}>
+                  <Text style={styles.prepNameClearText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={styles.prepMinutesWrap}>
+              <TextInput
+                style={styles.prepMinutes}
+                placeholder="0"
+                placeholderTextColor="#aaa"
+                keyboardType="numeric"
+                value={task.minutes}
+                onChangeText={(v) => updateAlongTask(task.id, 'minutes', v)}
+              />
+              <Text style={styles.prepMinutesUnit}>min</Text>
+            </View>
+            {alongTasks.length > 1 && (
+              <TouchableOpacity style={styles.removeTask} onPress={() => removeAlongTask(task.id)}>
+                <Text style={styles.removeTaskText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+        {alongTasks.length > 1 && (
+          <Text style={styles.prepTotal}>Total: {getTotalAlong()} min</Text>
+        )}
+      </View>
+
       {/* Calculate Button */}
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
@@ -754,17 +826,6 @@ export default function HomeScreen() {
           <Text style={styles.resultDest}>to reach {result.destination}</Text>
           <Text style={styles.resultDateLine}>on {result.eventDate} at {result.eventTime}</Text>
 
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={calculateLeaveTime}
-            disabled={loading}
-          >
-            {loading
-              ? <ActivityIndicator size="small" color="#ff4d1c" />
-              : <Text style={styles.refreshButtonText}>↻ Refresh</Text>
-            }
-          </TouchableOpacity>
-
           <View style={styles.breakdown}>
             <View style={styles.breakdownItem}>
               <Text style={styles.breakdownVal}>{result.drive}m</Text>
@@ -772,16 +833,43 @@ export default function HomeScreen() {
             </View>
             <View style={[styles.breakdownItem, { borderWidth: 1, borderColor: result.trafficLevel === 'good' ? 'rgba(74,222,128,0.3)' : result.trafficLevel === 'moderate' ? 'rgba(251,146,60,0.3)' : 'rgba(248,113,113,0.3)' }]}>
               <Text style={[styles.breakdownVal, { color: result.trafficLevel === 'good' ? '#4ade80' : result.trafficLevel === 'moderate' ? '#fb923c' : '#f87171' }]}>
-                {result.trafficLevel === 'good' ? 'Good' : result.trafficLevel === 'moderate' ? 'Moderate' : 'Heavy'}
+                +{result.traffic}m
               </Text>
               <Text style={styles.breakdownLbl}>Traffic</Text>
-              <Text style={styles.breakdownSub}>as of {result.calculatedAt}</Text>
             </View>
             <View style={styles.breakdownItem}>
-              <Text style={styles.breakdownVal}>5m</Text>
-              <Text style={styles.breakdownLbl}>Buffer</Text>
+              <Text style={styles.breakdownVal}>{result.along}m</Text>
+              <Text style={styles.breakdownLbl}>Extra time</Text>
             </View>
+            {bufferEnabled ? (
+              <TouchableOpacity style={styles.breakdownItem} onPress={() => {
+                setBufferEnabled(false);
+                const newLeave = new Date(result.leaveDate.getTime() + 5 * 60000);
+                const newPrepStart = new Date(newLeave.getTime() - result.prep * 60000);
+                setResult(prev => ({ ...prev, leaveTime: formatTime(newLeave), leaveDate: newLeave, prepStartTime: formatTime(newPrepStart), prepStartDate: newPrepStart }));
+              }}>
+                <Text style={styles.breakdownVal}>5m</Text>
+                <Text style={styles.breakdownLbl}>Buffer</Text>
+                <Text style={styles.bufferRemove}>✕</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={[styles.breakdownItem, { opacity: 0.4 }]} onPress={() => {
+                setBufferEnabled(true);
+                const newLeave = new Date(result.leaveDate.getTime() - 5 * 60000);
+                const newPrepStart = new Date(newLeave.getTime() - result.prep * 60000);
+                setResult(prev => ({ ...prev, leaveTime: formatTime(newLeave), leaveDate: newLeave, prepStartTime: formatTime(newPrepStart), prepStartDate: newPrepStart }));
+              }}>
+                <Text style={styles.breakdownVal}>5m</Text>
+                <Text style={styles.breakdownLbl}>Buffer</Text>
+                <Text style={styles.bufferAdd}>+ Add</Text>
+              </TouchableOpacity>
+            )}
           </View>
+
+          <Text style={styles.trafficRefreshNote}>
+            Traffic as of {result.calculatedAt} ·{' '}
+            <Text style={styles.trafficRefreshLink} onPress={calculateLeaveTime}>Refresh</Text>
+          </Text>
 
           {result.prep > 0 && (
             <View style={styles.prepReadySection}>
@@ -997,12 +1085,16 @@ const styles = StyleSheet.create({
     letterSpacing: 2, marginBottom: 8,
   },
   resultTime: { fontSize: 56, fontWeight: '800', color: '#fff', letterSpacing: -1 },
-  refreshButton: {
-    marginTop: 12, marginBottom: 16, paddingVertical: 6, paddingHorizontal: 16,
-    borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+  bufferRemove: {
+    color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '700', marginTop: 4,
   },
-  refreshButtonText: { color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: '600' },
+  bufferAdd: {
+    color: '#ff4d1c', fontSize: 10, fontWeight: '700', marginTop: 4,
+  },
+  trafficRefreshNote: {
+    fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 10, textAlign: 'center',
+  },
+  trafficRefreshLink: { color: '#ff4d1c', fontWeight: '700', textDecorationLine: 'underline' },
   prepReadySection: {
     width: '100%', marginTop: 16, paddingTop: 16,
     borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)',
@@ -1016,7 +1108,7 @@ const styles = StyleSheet.create({
   prepReadyHint: {
     fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 4,
   },
-  resultDest: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 },
+  resultDest: { fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4, textAlign: 'center' },
   resultDateLine: {
     fontSize: 12, color: 'rgba(255,255,255,0.35)',
     marginTop: 2, marginBottom: 20,
@@ -1026,10 +1118,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12,
     padding: 12, alignItems: 'center', flex: 1,
   },
-  breakdownVal: { fontSize: 16, fontWeight: '700', color: '#ff4d1c' },
+  breakdownVal: { fontSize: 16, fontWeight: '700', color: '#ff4d1c', textAlign: 'center' },
   breakdownLbl: {
     fontSize: 10, color: 'rgba(255,255,255,0.5)',
-    marginTop: 2, fontWeight: '600', letterSpacing: 0.5,
+    marginTop: 2, fontWeight: '600', letterSpacing: 0.5, textAlign: 'center',
   },
   breakdownSub: {
     fontSize: 9, color: 'rgba(255,255,255,0.3)',
