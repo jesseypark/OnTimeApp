@@ -999,7 +999,7 @@ const styles = StyleSheet.create({
   input: { fontSize: 16, fontWeight: '600', color: '#1a1a1a' },
   prepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   prepSubtitle: { fontSize: 12, color: '#aaa', marginBottom: 10, marginTop: -6 },
-  optionalTag: { fontSize: 11, color: '#bbb', fontWeight: '400' as const, letterSpacing: 0 },
+  optionalTag: { fontSize: 11, color: '#888', fontWeight: '400' as const, letterSpacing: 0 },
   addButton: {
     width: 28, height: 28, borderRadius: 14,
     backgroundColor: '#ff4d1c', alignItems: 'center', justifyContent: 'center',
