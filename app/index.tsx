@@ -687,10 +687,7 @@ export default function HomeScreen() {
       <View style={styles.card}>
         <View style={styles.prepHeader}>
           <View>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-              <Text style={styles.label}>📋 Prep tasks</Text>
-              <Text style={styles.optionalTag}>(optional)</Text>
-            </View>
+            <Text style={styles.label}>📋 Prep tasks <Text style={styles.optionalTag}>(optional)</Text></Text>
             <Text style={styles.prepSubtitle}>Things to do before you leave</Text>
           </View>
           <TouchableOpacity style={styles.addButton} onPress={addPrepTask}>
@@ -740,10 +737,7 @@ export default function HomeScreen() {
       <View style={styles.card}>
         <View style={styles.prepHeader}>
           <View>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-              <Text style={styles.label}>🏁 Arrival tasks</Text>
-              <Text style={styles.optionalTag}>(optional)</Text>
-            </View>
+            <Text style={styles.label}>🏁 Arrival tasks <Text style={styles.optionalTag}>(optional)</Text></Text>
             <Text style={styles.prepSubtitle}>Things to do before you arrive</Text>
           </View>
           <TouchableOpacity style={styles.addButton} onPress={addAlongTask}>
@@ -1005,7 +999,7 @@ const styles = StyleSheet.create({
   input: { fontSize: 16, fontWeight: '600', color: '#1a1a1a' },
   prepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   prepSubtitle: { fontSize: 12, color: '#aaa', marginBottom: 10, marginTop: -6 },
-  optionalTag: { fontSize: 11, color: '#999', fontWeight: '400' as const, letterSpacing: 0 },
+  optionalTag: { fontSize: 11, color: '#bbb', fontWeight: '400' as const, letterSpacing: 0 },
   addButton: {
     width: 28, height: 28, borderRadius: 14,
     backgroundColor: '#ff4d1c', alignItems: 'center', justifyContent: 'center',
